@@ -1,0 +1,87 @@
+@startuml
+
+enum ProductUnit {
+  OZ
+  LB
+  EA
+  KG
+  G
+  L
+  ML
+  GAL
+  QT
+}
+
+class Product {
+  id: int
+  name: string
+  category: string
+  default_compare_unit: ProductUnit
+}
+
+class ProductVariant {
+  id: int
+  product_id: int
+  label: string
+  pack_count: int
+  net_quantity: float
+  quantity_unit: ProductUnit
+  is_variable_weight: bool
+  upc: int
+}
+
+ProductVariant "0..*" --> "1" Product : "Represents package of"
+Product -- ProductUnit
+ProductVariant -- ProductUnit
+
+class Store {
+  id: int
+  name: string
+  address: string
+  latitude: float
+  longitude: float
+}
+
+class PriceObservation {
+  id: int
+  store_id: int
+  variant_id: int
+  price_total: float
+  observed_at: timestamp
+  is_sale: bool
+  sale_id: int
+}
+
+PriceObservation "0..*" --> "1" Store : "Found in"
+PriceObservation "0..*" --> "1" ProductVariant : "Is price of"
+
+class Sale {
+  id: int
+  limit_quantity: int
+  expiration_date: timestamp
+  start_date: timestamp
+  minimum_quantity: int
+}
+
+PriceObservation "0..*" --> "1" Sale : "May contain"
+
+enum COMPARISON {
+  CHEAPEST_PURCHASE
+  BEST_UNIT_VALUE
+  MEET_QUANTITY_MIN_COST
+}
+
+class GroceryListItem {
+  id: int
+  product_id: int
+  preverred_variant_id: int
+  quantity_needed: int
+  quantity_unit: ProductUnit
+  comparison_mode: COMPARISON
+}
+
+GroceryListItem -- COMPARISON
+GroceryListItem -- ProductUnit
+GroceryListItem "0..*" --> "1" Product : "Organizes"
+
+@enduml
