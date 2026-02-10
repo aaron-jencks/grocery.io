@@ -2,9 +2,10 @@ package com.example.grocerystoreorganizer.data.local.entity
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "list_items")
+@Entity(tableName = "list_items", indices = [Index(value = ["productId"], unique = true)])
 data class GroceryListItem(
     @PrimaryKey(autoGenerate = true) @ColumnInfo(name = "rowid") val id: Int,
     val productId: Int,
