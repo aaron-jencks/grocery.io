@@ -19,7 +19,7 @@ data class ProductVariant(
     val label: String,
     val packCount: Int = 1,
     val netQuantity: Double,
-    val quantityUnit: ProductUnit = ProductUnit.Each,
+    val quantityUnit: ProductUnit = ProductUnit.EA,
     val isVariableWeight: Boolean = false,
     val upc: Int
 )

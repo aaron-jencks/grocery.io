@@ -10,5 +10,5 @@ data class Product(
     @PrimaryKey(autoGenerate = true) @ColumnInfo(name = "rowid") val id: Int,
     val name: String,
     val category: String? = null,
-    val defaultCompareUnit: ProductUnit = ProductUnit.Each
+    val defaultCompareUnit: ProductUnit = ProductUnit.EA
 )
