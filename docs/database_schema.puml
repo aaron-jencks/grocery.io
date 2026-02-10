@@ -74,7 +74,7 @@ enum COMPARISON {
 class GroceryListItem {
   id: int
   product_id: int
-  preverred_variant_id: int
+  preferred_variant_id: int
   quantity_needed: int
   quantity_unit: ProductUnit
   comparison_mode: COMPARISON
@@ -83,5 +83,6 @@ class GroceryListItem {
 GroceryListItem -- COMPARISON
 GroceryListItem -- ProductUnit
 GroceryListItem "0..*" --> "1" Product : "Organizes"
+GroceryListItem "0..*" --> "1" ProductVariant : "Has Preference of"
 
 @enduml
