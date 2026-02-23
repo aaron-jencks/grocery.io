@@ -1,8 +1,6 @@
 package com.example.grocerystoreorganizer.ui
 
 import androidx.lifecycle.ViewModel
-import com.example.grocerystoreorganizer.AddressUiState
-import com.example.grocerystoreorganizer.data.local.entity.GroceryStoreItemEntity
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -12,7 +10,7 @@ sealed interface GroceryListUiState {
     data object AddingItem : GroceryListUiState
     data object FindingItem : GroceryListUiState
     data object FindingStore : GroceryListUiState
-    data class ItemSuccess(val storeItem: GroceryStoreItemEntity) : GroceryListUiState
+    data class ItemSuccess(val upc: Int) : GroceryListUiState
     data class ItemFailure(val message: String) : GroceryListUiState
 }
 

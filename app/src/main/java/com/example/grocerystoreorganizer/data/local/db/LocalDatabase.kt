@@ -2,16 +2,37 @@ package com.example.grocerystoreorganizer.data.local.db
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
-import com.example.grocerystoreorganizer.data.local.dao.GroceryItemDao
-import com.example.grocerystoreorganizer.data.local.dao.GroceryStoreDao
-import com.example.grocerystoreorganizer.data.local.dao.GroceryStoreItemDao
-import com.example.grocerystoreorganizer.data.local.entity.GroceryItemEntity
-import com.example.grocerystoreorganizer.data.local.entity.GroceryStoreEntity
-import com.example.grocerystoreorganizer.data.local.entity.GroceryStoreItemEntity
+import androidx.room.TypeConverters
+import com.example.grocerystoreorganizer.data.local.dao.GroceryListItemDao
+import com.example.grocerystoreorganizer.data.local.dao.PriceObservationDao
+import com.example.grocerystoreorganizer.data.local.dao.ProductDao
+import com.example.grocerystoreorganizer.data.local.dao.ProductVariantDao
+import com.example.grocerystoreorganizer.data.local.dao.SaleDao
+import com.example.grocerystoreorganizer.data.local.dao.StoreDao
+import com.example.grocerystoreorganizer.data.local.entity.GroceryListItem
+import com.example.grocerystoreorganizer.data.local.entity.PriceObservation
+import com.example.grocerystoreorganizer.data.local.entity.Product
+import com.example.grocerystoreorganizer.data.local.entity.ProductVariant
+import com.example.grocerystoreorganizer.data.local.entity.Sale
+import com.example.grocerystoreorganizer.data.local.entity.Store
 
-@Database(entities = [GroceryItemEntity::class, GroceryStoreEntity::class, GroceryStoreItemEntity::class], version = 1)
+@Database(
+    entities = [
+        Product::class,
+        ProductVariant::class,
+        Store::class,
+        PriceObservation::class,
+        Sale::class,
+        GroceryListItem::class
+    ],
+    version = 3
+)
+@TypeConverters(LocalTypeConverters::class)
 abstract class LocalDatabase : RoomDatabase() {
-    abstract fun itemDao(): GroceryItemDao
-    abstract fun storeDao(): GroceryStoreDao
-    abstract fun storeItemDao(): GroceryStoreItemDao
+    abstract fun productDao(): ProductDao
+    abstract fun productVariantDao(): ProductVariantDao
+    abstract fun storeDao(): StoreDao
+    abstract fun priceObservationDao(): PriceObservationDao
+    abstract fun saleDao(): SaleDao
+    abstract fun groceryListItemDao(): GroceryListItemDao
 }

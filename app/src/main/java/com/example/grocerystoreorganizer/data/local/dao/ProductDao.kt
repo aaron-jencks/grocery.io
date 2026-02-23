@@ -10,14 +10,17 @@ import com.example.grocerystoreorganizer.data.local.entity.Product
 @Dao
 interface ProductDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    fun insertItems(vararg items: Product)
+    suspend fun insertItems(vararg items: Product): List<Long>
 
     @Update
-    fun updateItems(vararg items: Product)
+    suspend fun updateItems(vararg items: Product): Int
 
     @Query("select * from products where category = :category")
-    fun FindAllByCategory(category: String): List<Product>
+    suspend fun FindAllByCategory(category: String): List<Product>
 
     @Query("select * from products where rowid = :id")
-    fun FindById(id: Int): Product?
+    suspend fun FindById(id: Int): Product?
+
+    @Query("select * from products where name = :name limit 1")
+    suspend fun FindByName(name: String): Product?
 }

@@ -6,22 +6,21 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import com.example.grocerystoreorganizer.data.local.entity.GroceryListItem
-import com.example.grocerystoreorganizer.data.local.entity.Product
 
 @Dao
 interface GroceryListItemDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    fun insertItems(vararg items: GroceryListItem)
+    suspend fun insertItems(vararg items: GroceryListItem): List<Long>
 
     @Update
-    fun updateItems(vararg items: GroceryListItem)
+    suspend fun updateItems(vararg items: GroceryListItem): Int
 
     @Query("select * from list_items")
-    fun FindAll(): List<GroceryListItem>
+    suspend fun FindAll(): List<GroceryListItem>
 
     @Query("select * from list_items where rowid = :id")
-    fun FindById(id: Int): GroceryListItem?
+    suspend fun FindById(id: Int): GroceryListItem?
 
     @Query("select * from list_items where productId = :id")
-    fun FindByProduct(id: Int): GroceryListItem?
+    suspend fun FindByProduct(id: Int): GroceryListItem?
 }

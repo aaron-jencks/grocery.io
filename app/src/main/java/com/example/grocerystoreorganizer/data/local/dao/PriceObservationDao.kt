@@ -10,20 +10,20 @@ import com.example.grocerystoreorganizer.data.local.entity.PriceObservation
 @Dao
 interface PriceObservationDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    fun insertItems(vararg items: PriceObservation)
+    suspend fun insertItems(vararg items: PriceObservation): List<Long>
 
     @Update
-    fun updateItems(vararg items: PriceObservation)
+    suspend fun updateItems(vararg items: PriceObservation): Int
 
     @Query("select * from prices where rowid = :id")
-    fun FindById(id: Int): PriceObservation?
+    suspend fun FindById(id: Int): PriceObservation?
 
     @Query("select * from prices where storeId = :storeId")
-    fun FindAllByStore(storeId: Int): List<PriceObservation>
+    suspend fun FindAllByStore(storeId: Int): List<PriceObservation>
 
     @Query("select prices.* from prices left join variants on prices.variantId = variants.rowid where variants.productId = :productId")
-    fun FindAllByProduct(productId: Int): List<PriceObservation>
+    suspend fun FindAllByProduct(productId: Int): List<PriceObservation>
 
     @Query("select prices.* from prices left join variants on prices.variantId = variants.rowid where variants.productId = :productId and prices.storeId = :storeId")
-    fun FindAllByProductAndStore(productId: Int, storeId: Int): List<PriceObservation>
+    suspend fun FindAllByProductAndStore(productId: Int, storeId: Int): List<PriceObservation>
 }

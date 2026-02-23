@@ -5,22 +5,36 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
+import com.example.grocerystoreorganizer.data.local.entity.ProductUnit
 import com.example.grocerystoreorganizer.data.local.entity.ProductVariant
 
 @Dao
 interface ProductVariantDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    fun insertItems(vararg items: ProductVariant)
+    suspend fun insertItems(vararg items: ProductVariant): List<Long>
 
     @Update
-    fun updateItems(vararg items: ProductVariant)
+    suspend fun updateItems(vararg items: ProductVariant): Int
 
     @Query("select * from variants where rowid = :id")
-    fun FindById(id: Int): ProductVariant?
+    suspend fun FindById(id: Int): ProductVariant?
 
     @Query("select * from variants where productId = :productId")
-    fun FindAllByProduct(productId: Int): List<ProductVariant>
+    suspend fun FindAllByProduct(productId: Int): List<ProductVariant>
 
     @Query("select * from variants where upc = :upc")
-    fun FindByUPC(upc: Int): ProductVariant?
+    suspend fun FindByUPC(upc: String): ProductVariant?
+
+    @Query(
+        "select * from variants " +
+            "where productId = :productId and label = :label and packCount = :packCount " +
+            "and netQuantity = :netQuantity and quantityUnit = :quantityUnit limit 1"
+    )
+    suspend fun FindByNaturalKey(
+        productId: Int,
+        label: String,
+        packCount: Int,
+        netQuantity: Double,
+        quantityUnit: ProductUnit,
+    ): ProductVariant?
 }
