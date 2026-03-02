@@ -1,0 +1,75 @@
+syntax = "proto3";
+
+package grocery.database;
+
+message UpcRequest {
+  string upc = 1;
+}
+
+enum ProductUnit {
+  OZ = 0;
+  LB = 1;
+  EA = 2;
+  KG = 3;
+  G = 4;
+  LIT = 5;
+  ML = 6;
+  GAL = 7;
+  QT = 8;
+  PT = 9;
+}
+
+message UpcInfo {
+  string upc = 1;
+  string productName = 2;
+  optional string productCategory = 3;
+  string variantLabel = 4;
+  int32 packCount = 5;
+  double netQuantity = 6;
+  ProductUnit quantityUnit = 7;
+  bool isVariableWeight = 8;
+}
+
+message UpcResponse {
+  bool found = 1;
+  optional UpcInfo info = 2;
+}
+
+service UpcService {
+  rpc ResolveUpc(UpcRequest) returns (UpcResponse);
+}
+
+message Coordinate {
+  double latitude = 1;
+  double longitude = 2;
+}
+
+message StoreInfo {
+  string storeAddress = 1;
+  Coordinate location = 2;
+  optional string storeName = 3;
+}
+
+message SaleInfo {
+  string startDate = 1;
+  optional string expirationDate = 2;
+  optional int32 minimumQuantity = 3;
+  optional int32 limitQuantity = 4;
+}
+
+message PriceObservationRequest {
+  StoreInfo store = 1;
+  UpcInfo upc = 2;
+  double priceTotal = 3;
+  string observedAt = 4;
+  bool isSale = 5;
+  optional SaleInfo saleInfo = 6;
+}
+
+message PriceObservationResponse {
+  optional uint32 observationId = 1;
+}
+
+service ObservationService {
+  rpc CreatePriceObservation(PriceObservationRequest) returns (PriceObservationResponse);
+}
