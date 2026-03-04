@@ -1,0 +1,5 @@
+# Local-only gRPC server config for development.
+# Copy this file to grocery.local.properties and edit the values there.
+
+grpcHost=10.0.2.2
+grpcPort=50051
