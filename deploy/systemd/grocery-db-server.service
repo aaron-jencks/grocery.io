@@ -1,0 +1,17 @@
+[Unit]
+Description=Grocery gRPC Database Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/default/grocery-db
+WorkingDirectory=/workspace/github/grocery.io
+ExecStart=/workspace/github/grocery.io/db_server/run_server.sh
+Restart=always
+RestartSec=5
+User=aaron
+Group=aaron
+
+[Install]
+WantedBy=multi-user.target

@@ -24,33 +24,46 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10\x64\x62_service.proto\x12\x10grocery.database\"\x19\n\nUpcRequest\x12\x0b\n\x03upc\x18\x01 \x01(\t\"\xea\x01\n\x07UpcInfo\x12\x0b\n\x03upc\x18\x01 \x01(\t\x12\x13\n\x0bproductName\x18\x02 \x01(\t\x12\x1c\n\x0fproductCategory\x18\x03 \x01(\tH\x00\x88\x01\x01\x12\x14\n\x0cvariantLabel\x18\x04 \x01(\t\x12\x11\n\tpackCount\x18\x05 \x01(\x05\x12\x13\n\x0bnetQuantity\x18\x06 \x01(\x01\x12\x33\n\x0cquantityUnit\x18\x07 \x01(\x0e\x32\x1d.grocery.database.ProductUnit\x12\x18\n\x10isVariableWeight\x18\x08 \x01(\x08\x42\x12\n\x10_productCategory\"S\n\x0bUpcResponse\x12\r\n\x05\x66ound\x18\x01 \x01(\x08\x12,\n\x04info\x18\x02 \x01(\x0b\x32\x19.grocery.database.UpcInfoH\x00\x88\x01\x01\x42\x07\n\x05_info\"1\n\nCoordinate\x12\x10\n\x08latitude\x18\x01 \x01(\x01\x12\x11\n\tlongitude\x18\x02 \x01(\x01\"w\n\tStoreInfo\x12\x14\n\x0cstoreAddress\x18\x01 \x01(\t\x12.\n\x08location\x18\x02 \x01(\x0b\x32\x1c.grocery.database.Coordinate\x12\x16\n\tstoreName\x18\x03 \x01(\tH\x00\x88\x01\x01\x42\x0c\n\n_storeName\"\xad\x01\n\x08SaleInfo\x12\x11\n\tstartDate\x18\x01 \x01(\t\x12\x1b\n\x0e\x65xpirationDate\x18\x02 \x01(\tH\x00\x88\x01\x01\x12\x1c\n\x0fminimumQuantity\x18\x03 \x01(\x05H\x01\x88\x01\x01\x12\x1a\n\rlimitQuantity\x18\x04 \x01(\x05H\x02\x88\x01\x01\x42\x11\n\x0f_expirationDateB\x12\n\x10_minimumQuantityB\x10\n\x0e_limitQuantity\"\xe5\x01\n\x17PriceObservationRequest\x12*\n\x05store\x18\x01 \x01(\x0b\x32\x1b.grocery.database.StoreInfo\x12&\n\x03upc\x18\x02 \x01(\x0b\x32\x19.grocery.database.UpcInfo\x12\x12\n\npriceTotal\x18\x03 \x01(\x01\x12\x12\n\nobservedAt\x18\x04 \x01(\t\x12\x0e\n\x06isSale\x18\x05 \x01(\x08\x12\x31\n\x08saleInfo\x18\x06 \x01(\x0b\x32\x1a.grocery.database.SaleInfoH\x00\x88\x01\x01\x42\x0b\n\t_saleInfo\"H\n\x18PriceObservationResponse\x12\x1a\n\robservationId\x18\x01 \x01(\rH\x00\x88\x01\x01\x42\x10\n\x0e_observationId*^\n\x0bProductUnit\x12\x06\n\x02OZ\x10\x00\x12\x06\n\x02LB\x10\x01\x12\x06\n\x02\x45\x41\x10\x02\x12\x06\n\x02KG\x10\x03\x12\x05\n\x01G\x10\x04\x12\x07\n\x03LIT\x10\x05\x12\x06\n\x02ML\x10\x06\x12\x07\n\x03GAL\x10\x07\x12\x06\n\x02QT\x10\x08\x12\x06\n\x02PT\x10\t2W\n\nUpcService\x12I\n\nResolveUpc\x12\x1c.grocery.database.UpcRequest\x1a\x1d.grocery.database.UpcResponse2\x85\x01\n\x12ObservationService\x12o\n\x16\x43reatePriceObservation\x12).grocery.database.PriceObservationRequest\x1a*.grocery.database.PriceObservationResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10\x64\x62_service.proto\x12\x10grocery.database\"\x19\n\nUpcRequest\x12\x0b\n\x03upc\x18\x01 \x01(\t\"\xfd\x01\n\x07UpcInfo\x12\x0b\n\x03upc\x18\x01 \x01(\t\x12\x13\n\x0bproductName\x18\x02 \x01(\t\x12\x1c\n\x0fproductCategory\x18\x03 \x01(\tH\x00\x88\x01\x01\x12\x14\n\x0cvariantLabel\x18\x04 \x01(\t\x12\x11\n\tpackCount\x18\x05 \x01(\x05\x12\x13\n\x0bnetQuantity\x18\x06 \x01(\x01\x12\x33\n\x0cquantityUnit\x18\x07 \x01(\x0e\x32\x1d.grocery.database.ProductUnit\x12\x18\n\x10isVariableWeight\x18\x08 \x01(\x08\x12\x11\n\tupdatedAt\x18\t \x01(\tB\x12\n\x10_productCategory\"S\n\x0bUpcResponse\x12\r\n\x05\x66ound\x18\x01 \x01(\x08\x12,\n\x04info\x18\x02 \x01(\x0b\x32\x19.grocery.database.UpcInfoH\x00\x88\x01\x01\x42\x07\n\x05_info\"z\n\x0bProductInfo\x12\x11\n\tproductId\x18\x01 \x01(\r\x12\x13\n\x0bproductName\x18\x02 \x01(\t\x12\x1c\n\x0fproductCategory\x18\x03 \x01(\tH\x00\x88\x01\x01\x12\x11\n\tupdatedAt\x18\x04 \x01(\tB\x12\n\x10_productCategory\"A\n\x13ListProductsRequest\x12\x19\n\x0cupdatedAfter\x18\x01 \x01(\tH\x00\x88\x01\x01\x42\x0f\n\r_updatedAfter\"^\n\x14ListProductsResponse\x12/\n\x08products\x18\x01 \x03(\x0b\x32\x1d.grocery.database.ProductInfo\x12\x15\n\rnextSyncToken\x18\x02 \x01(\t\"`\n\x1dListVariantsForProductRequest\x12\x13\n\x0bproductName\x18\x01 \x01(\t\x12\x19\n\x0cupdatedAfter\x18\x02 \x01(\tH\x00\x88\x01\x01\x42\x0f\n\r_updatedAfter\"d\n\x1eListVariantsForProductResponse\x12+\n\x08variants\x18\x01 \x03(\x0b\x32\x19.grocery.database.UpcInfo\x12\x15\n\rnextSyncToken\x18\x02 \x01(\t\"1\n\nCoordinate\x12\x10\n\x08latitude\x18\x01 \x01(\x01\x12\x11\n\tlongitude\x18\x02 \x01(\x01\"w\n\tStoreInfo\x12\x14\n\x0cstoreAddress\x18\x01 \x01(\t\x12.\n\x08location\x18\x02 \x01(\x0b\x32\x1c.grocery.database.Coordinate\x12\x16\n\tstoreName\x18\x03 \x01(\tH\x00\x88\x01\x01\x42\x0c\n\n_storeName\"\xad\x01\n\x08SaleInfo\x12\x11\n\tstartDate\x18\x01 \x01(\t\x12\x1b\n\x0e\x65xpirationDate\x18\x02 \x01(\tH\x00\x88\x01\x01\x12\x1c\n\x0fminimumQuantity\x18\x03 \x01(\x05H\x01\x88\x01\x01\x12\x1a\n\rlimitQuantity\x18\x04 \x01(\x05H\x02\x88\x01\x01\x42\x11\n\x0f_expirationDateB\x12\n\x10_minimumQuantityB\x10\n\x0e_limitQuantity\"\xe5\x01\n\x17PriceObservationRequest\x12*\n\x05store\x18\x01 \x01(\x0b\x32\x1b.grocery.database.StoreInfo\x12&\n\x03upc\x18\x02 \x01(\x0b\x32\x19.grocery.database.UpcInfo\x12\x12\n\npriceTotal\x18\x03 \x01(\x01\x12\x12\n\nobservedAt\x18\x04 \x01(\t\x12\x0e\n\x06isSale\x18\x05 \x01(\x08\x12\x31\n\x08saleInfo\x18\x06 \x01(\x0b\x32\x1a.grocery.database.SaleInfoH\x00\x88\x01\x01\x42\x0b\n\t_saleInfo\"H\n\x18PriceObservationResponse\x12\x1a\n\robservationId\x18\x01 \x01(\rH\x00\x88\x01\x01\x42\x10\n\x0e_observationId*^\n\x0bProductUnit\x12\x06\n\x02OZ\x10\x00\x12\x06\n\x02LB\x10\x01\x12\x06\n\x02\x45\x41\x10\x02\x12\x06\n\x02KG\x10\x03\x12\x05\n\x01G\x10\x04\x12\x07\n\x03LIT\x10\x05\x12\x06\n\x02ML\x10\x06\x12\x07\n\x03GAL\x10\x07\x12\x06\n\x02QT\x10\x08\x12\x06\n\x02PT\x10\t2W\n\nUpcService\x12I\n\nResolveUpc\x12\x1c.grocery.database.UpcRequest\x1a\x1d.grocery.database.UpcResponse2\xec\x01\n\x0e\x43\x61talogService\x12]\n\x0cListProducts\x12%.grocery.database.ListProductsRequest\x1a&.grocery.database.ListProductsResponse\x12{\n\x16ListVariantsForProduct\x12/.grocery.database.ListVariantsForProductRequest\x1a\x30.grocery.database.ListVariantsForProductResponse2\x85\x01\n\x12ObservationService\x12o\n\x16\x43reatePriceObservation\x12).grocery.database.PriceObservationRequest\x1a*.grocery.database.PriceObservationResponseB:\n&com.example.grocerystoreorganizer.grpcB\x0e\x44\x62ServiceProtoP\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'db_service_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
-  DESCRIPTOR._loaded_options = None
-  _globals['_PRODUCTUNIT']._serialized_start=1041
-  _globals['_PRODUCTUNIT']._serialized_end=1135
+  _globals['DESCRIPTOR']._loaded_options = None
+  _globals['DESCRIPTOR']._serialized_options = b'\n&com.example.grocerystoreorganizer.grpcB\016DbServiceProtoP\001'
+  _globals['_PRODUCTUNIT']._serialized_start=1547
+  _globals['_PRODUCTUNIT']._serialized_end=1641
   _globals['_UPCREQUEST']._serialized_start=38
   _globals['_UPCREQUEST']._serialized_end=63
   _globals['_UPCINFO']._serialized_start=66
-  _globals['_UPCINFO']._serialized_end=300
-  _globals['_UPCRESPONSE']._serialized_start=302
-  _globals['_UPCRESPONSE']._serialized_end=385
-  _globals['_COORDINATE']._serialized_start=387
-  _globals['_COORDINATE']._serialized_end=436
-  _globals['_STOREINFO']._serialized_start=438
-  _globals['_STOREINFO']._serialized_end=557
-  _globals['_SALEINFO']._serialized_start=560
-  _globals['_SALEINFO']._serialized_end=733
-  _globals['_PRICEOBSERVATIONREQUEST']._serialized_start=736
-  _globals['_PRICEOBSERVATIONREQUEST']._serialized_end=965
-  _globals['_PRICEOBSERVATIONRESPONSE']._serialized_start=967
-  _globals['_PRICEOBSERVATIONRESPONSE']._serialized_end=1039
-  _globals['_UPCSERVICE']._serialized_start=1137
-  _globals['_UPCSERVICE']._serialized_end=1224
-  _globals['_OBSERVATIONSERVICE']._serialized_start=1227
-  _globals['_OBSERVATIONSERVICE']._serialized_end=1360
+  _globals['_UPCINFO']._serialized_end=319
+  _globals['_UPCRESPONSE']._serialized_start=321
+  _globals['_UPCRESPONSE']._serialized_end=404
+  _globals['_PRODUCTINFO']._serialized_start=406
+  _globals['_PRODUCTINFO']._serialized_end=528
+  _globals['_LISTPRODUCTSREQUEST']._serialized_start=530
+  _globals['_LISTPRODUCTSREQUEST']._serialized_end=595
+  _globals['_LISTPRODUCTSRESPONSE']._serialized_start=597
+  _globals['_LISTPRODUCTSRESPONSE']._serialized_end=691
+  _globals['_LISTVARIANTSFORPRODUCTREQUEST']._serialized_start=693
+  _globals['_LISTVARIANTSFORPRODUCTREQUEST']._serialized_end=789
+  _globals['_LISTVARIANTSFORPRODUCTRESPONSE']._serialized_start=791
+  _globals['_LISTVARIANTSFORPRODUCTRESPONSE']._serialized_end=891
+  _globals['_COORDINATE']._serialized_start=893
+  _globals['_COORDINATE']._serialized_end=942
+  _globals['_STOREINFO']._serialized_start=944
+  _globals['_STOREINFO']._serialized_end=1063
+  _globals['_SALEINFO']._serialized_start=1066
+  _globals['_SALEINFO']._serialized_end=1239
+  _globals['_PRICEOBSERVATIONREQUEST']._serialized_start=1242
+  _globals['_PRICEOBSERVATIONREQUEST']._serialized_end=1471
+  _globals['_PRICEOBSERVATIONRESPONSE']._serialized_start=1473
+  _globals['_PRICEOBSERVATIONRESPONSE']._serialized_end=1545
+  _globals['_UPCSERVICE']._serialized_start=1643
+  _globals['_UPCSERVICE']._serialized_end=1730
+  _globals['_CATALOGSERVICE']._serialized_start=1733
+  _globals['_CATALOGSERVICE']._serialized_end=1969
+  _globals['_OBSERVATIONSERVICE']._serialized_start=1972
+  _globals['_OBSERVATIONSERVICE']._serialized_end=2105
 # @@protoc_insertion_point(module_scope)

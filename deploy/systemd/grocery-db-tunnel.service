@@ -1,0 +1,16 @@
+[Unit]
+Description=Grocery gRPC Reverse Tunnel
+After=network-online.target grocery-db-server.service
+Wants=network-online.target grocery-db-server.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/default/grocery-db
+ExecStart=/usr/bin/autossh -M 0 -o ServerAliveInterval=60 -o ServerAliveCountMax=10 -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ${GROCERY_TUNNEL_KEY} -N -R ${GROCERY_TUNNEL_REMOTE_PORT}:localhost:${GROCERY_DB_PORT} ${GROCERY_TUNNEL_USER}@${GROCERY_TUNNEL_HOST}
+Restart=always
+RestartSec=5
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target
