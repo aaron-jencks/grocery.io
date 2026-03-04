@@ -1,0 +1,17 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+cascade-config
+fastapi
+grpcio
+grpcio-tools
+numpy
+openai
+opencv-python
+pillow
+pydantic
+PyQt6
+python-multipart
+scikit-learn
+torch
+tqdm
+transformers
+uvicorn

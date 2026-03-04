@@ -1,0 +1,9 @@
+.venv
+__pycache__
+*.pyc
+data
+artifacts
+checkpoints
+outputs
+run_configs
+local.secrets.json
