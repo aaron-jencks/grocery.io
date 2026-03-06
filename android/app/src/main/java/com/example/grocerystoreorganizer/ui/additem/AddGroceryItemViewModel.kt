@@ -7,6 +7,7 @@ import com.example.grocerystoreorganizer.data.local.repository.CameraRepository
 import com.example.grocerystoreorganizer.data.local.repository.CameraResult
 import com.example.grocerystoreorganizer.data.local.repository.LocationRepository
 import com.example.grocerystoreorganizer.data.local.repository.LocationResult
+import com.example.grocerystoreorganizer.data.local.repository.ParsedPriceTagResult
 import com.example.grocerystoreorganizer.data.local.repository.PriceObservationCrudRepository
 import com.example.grocerystoreorganizer.data.local.repository.PriceObservationDto
 import com.example.grocerystoreorganizer.data.local.repository.SaleDto
@@ -20,6 +21,7 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import android.net.Uri
 
 class AddGroceryItemViewModel(
     private val groceryRepo: PriceObservationCrudRepository,
@@ -132,6 +134,7 @@ class AddGroceryItemViewModel(
             return
         }
         update { it.copy(photo = PhotoUiState.Ready(uri)) }
+        parseCapturedPhoto()
     }
 
     fun onCameraPermissionResult(granted: Boolean) {
@@ -141,7 +144,45 @@ class AddGroceryItemViewModel(
 
     fun clearPhoto() {
         pendingPhotoUri = null
-        update { it.copy(photo = PhotoUiState.Idle) }
+        update { it.copy(photo = PhotoUiState.Idle, isParsingPhoto = false) }
+    }
+
+    fun parseCapturedPhoto() = viewModelScope.launch {
+        val s = _state.value
+        val photoState = s.photo as? PhotoUiState.Ready ?: run {
+            update { it.copy(generalError = "Take a photo first") }
+            return@launch
+        }
+        val imageBytes = cameraRepo.readBytes(photoState.outputUri)
+        if (imageBytes == null || imageBytes.isEmpty()) {
+            update { it.copy(generalError = "Failed to read captured image") }
+            return@launch
+        }
+        val imageFilename = extractTrainingImageFilename(photoState)
+
+        update {
+            it.copy(
+                isParsingPhoto = true,
+                generalError = null,
+                parseDialogMessage = null,
+                parseDialogAllowRetry = false,
+            )
+        }
+        runCatching {
+            groceryRepo.parsePriceTagImage(
+                imageJpeg = imageBytes,
+                imageFilename = imageFilename,
+            )
+        }.onSuccess { parsed ->
+            applyParsedPhotoResult(parsed)
+        }.onFailure { e ->
+            update {
+                it.copy(
+                    isParsingPhoto = false,
+                    generalError = e.message ?: "Failed to parse price-tag image",
+                )
+            }
+        }
     }
 
     fun resolveUpc() = viewModelScope.launch {
@@ -151,6 +192,12 @@ class AddGroceryItemViewModel(
             update { it.copy(upcError = "Enter a valid barcode (digits only, at least 4 digits)") }
             return@launch
         }
+        resolveUpcInternal(upc)
+    }
+
+    private suspend fun resolveUpcInternal(upc: String) {
+        val current = _state.value
+        if (current.isResolvingUpc) return
 
         update {
             it.copy(
@@ -367,6 +414,8 @@ class AddGroceryItemViewModel(
             } else {
                 null
             },
+            trainingImageJpeg = extractTrainingImageBytes(s.photo),
+            trainingImageFilename = extractTrainingImageFilename(s.photo),
         )
 
         update { it.copy(isSaving = true, generalError = null, savedId = null, upcConflictMessage = null, observedAt = observedAt) }
@@ -411,12 +460,78 @@ class AddGroceryItemViewModel(
         }
     }
 
+    fun acknowledgeParseDialog() {
+        if (_state.value.parseDialogMessage != null) {
+            update { it.copy(parseDialogMessage = null, parseDialogAllowRetry = false) }
+        }
+    }
+
+    fun retryPhotoFromParseDialog() {
+        acknowledgeParseDialog()
+        requestPhotoCapture()
+    }
+
     fun clearSavedFlag() {
         if (_state.value.savedId != null) update { it.copy(savedId = null) }
     }
 
     private fun update(block: (AddItemUiState) -> AddItemUiState) {
         _state.value = block(_state.value)
+    }
+
+    private suspend fun applyParsedPhotoResult(parsed: ParsedPriceTagResult) {
+        update {
+            it.copy(
+                isParsingPhoto = false,
+                itemPrice = parsed.priceTotal?.toString() ?: it.itemPrice,
+                packCount = parsed.packCount?.toString() ?: it.packCount,
+                netQuantity = parsed.netQuantity?.toString() ?: it.netQuantity,
+                quantityUnit = parsed.quantityUnit ?: it.quantityUnit,
+                isVariableWeight = parsed.isVariableWeight,
+            )
+        }
+
+        val messages = mutableListOf<String>()
+        var allowRetry = false
+
+        if (parsed.ambiguous) {
+            messages += "This image looks ambiguous. Please take a clearer picture or continue with manual entry."
+            allowRetry = true
+        }
+        if (parsed.unparsable) {
+            messages += "The image appears unclear or unusable. You can continue with manual entry."
+            allowRetry = true
+        }
+        if (!parsed.upcParsable) {
+            messages += "UPC could not be parsed from the image. Enter the UPC manually to continue."
+        }
+        parsed.message?.takeIf { it.isNotBlank() }?.let(messages::add)
+
+        val parsedUpc = normalizeUpc(parsed.upc ?: "")
+        if (parsedUpc != null) {
+            update { it.copy(itemUPC = parsedUpc, upcError = null) }
+            resolveUpcInternal(parsedUpc)
+        }
+
+        if (messages.isNotEmpty()) {
+            update {
+                it.copy(
+                    parseDialogMessage = messages.distinct().joinToString("\n\n"),
+                    parseDialogAllowRetry = allowRetry,
+                )
+            }
+        }
+    }
+
+    private fun extractTrainingImageBytes(photoState: PhotoUiState): ByteArray? {
+        val uri = (photoState as? PhotoUiState.Ready)?.outputUri ?: return null
+        return cameraRepo.readBytes(uri)
+    }
+
+    private fun extractTrainingImageFilename(photoState: PhotoUiState): String? {
+        val uri = (photoState as? PhotoUiState.Ready)?.outputUri ?: return null
+        val path = Uri.parse(uri).lastPathSegment ?: return null
+        return path.substringAfterLast('/')
     }
 
     private fun parseDouble(text: String): Double? =

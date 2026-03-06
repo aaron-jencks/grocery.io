@@ -2,12 +2,51 @@ from __future__ import annotations
 
 import datetime as dt
 import sqlite3
+from dataclasses import dataclass
 from typing import Optional
 
 from db_server.db.connection import Database
 from db_server.domain.observation import PriceObservation, Sale, Store
 from db_server.domain.upc import Product, ProductUnit, ProductVariant
 from db_server.domain.commands import PriceObservationInput, SaleInput
+
+
+@dataclass(frozen=True)
+class ShoppingOptimizationInput:
+    item_id: int
+    product_name: str
+    desired_count: int
+    comparison_mode: str
+    preferred_upc: Optional[str]
+
+
+@dataclass(frozen=True)
+class ShoppingOptimizationMatch:
+    item_id: int
+    comparison_mode: str
+    desired_count: int
+    store_id: int
+    store_name: Optional[str]
+    store_address: str
+    store_latitude: float
+    store_longitude: float
+    upc: str
+    product_name: str
+    variant_label: str
+    pack_count: int
+    net_quantity: float
+    quantity_unit: ProductUnit
+    price_observation_id: int
+    observed_price_total: float
+    observed_at: str
+    estimated_total_price: float
+
+
+@dataclass(frozen=True)
+class ShoppingOptimizationUnmatched:
+    item_id: int
+    product_name: str
+    reason: str
 
 
 class GroceryRepository:
@@ -248,6 +287,34 @@ class GroceryRepository:
             sale=self._sale_from_row(row),
         )
 
+    def optimize_grocery_list(
+        self,
+        items: list[ShoppingOptimizationInput],
+    ) -> tuple[list[ShoppingOptimizationMatch], list[ShoppingOptimizationUnmatched]]:
+        matches: list[ShoppingOptimizationMatch] = []
+        unmatched: list[ShoppingOptimizationUnmatched] = []
+        for item in items:
+            match, reason = self._find_best_match_for_item(item)
+            if match is None:
+                unmatched.append(
+                    ShoppingOptimizationUnmatched(
+                        item_id=item.item_id,
+                        product_name=item.product_name,
+                        reason=reason or "No price information available",
+                    )
+                )
+            else:
+                matches.append(match)
+                if reason is not None:
+                    unmatched.append(
+                        ShoppingOptimizationUnmatched(
+                            item_id=item.item_id,
+                            product_name=item.product_name,
+                            reason=f"Warning: {reason}",
+                        )
+                    )
+        return matches, unmatched
+
     def _resolve_store_id(
         self,
         connection: sqlite3.Connection,
@@ -286,6 +353,231 @@ class GroceryRepository:
             ),
         )
         return int(cursor.lastrowid)
+
+    def _find_best_match_for_item(
+        self,
+        item: ShoppingOptimizationInput,
+    ) -> tuple[Optional[ShoppingOptimizationMatch], Optional[str]]:
+        desired_count = max(1, item.desired_count)
+        with self.database.connect() as connection:
+            if item.preferred_upc:
+                rows = connection.execute(
+                    """
+                    SELECT
+                        pr.rowid AS price_observation_id,
+                        pr.price_total,
+                        pr.observed_at,
+                        s.rowid AS store_id,
+                        s.name AS store_name,
+                        s.address AS store_address,
+                        s.latitude AS store_latitude,
+                        s.longitude AS store_longitude,
+                        v.rowid AS variant_id,
+                        v.label AS variant_label,
+                        v.pack_count,
+                        v.net_quantity,
+                        v.quantity_unit,
+                        v.upc,
+                        p.name AS product_name
+                    FROM prices pr
+                    JOIN stores s ON s.rowid = pr.store_id
+                    JOIN variants v ON v.rowid = pr.variant_id
+                    JOIN products p ON p.rowid = v.product_id
+                    WHERE v.upc = ?
+                    """,
+                    (item.preferred_upc,),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT
+                        pr.rowid AS price_observation_id,
+                        pr.price_total,
+                        pr.observed_at,
+                        s.rowid AS store_id,
+                        s.name AS store_name,
+                        s.address AS store_address,
+                        s.latitude AS store_latitude,
+                        s.longitude AS store_longitude,
+                        v.rowid AS variant_id,
+                        v.label AS variant_label,
+                        v.pack_count,
+                        v.net_quantity,
+                        v.quantity_unit,
+                        v.upc,
+                        p.name AS product_name
+                    FROM prices pr
+                    JOIN stores s ON s.rowid = pr.store_id
+                    JOIN variants v ON v.rowid = pr.variant_id
+                    JOIN products p ON p.rowid = v.product_id
+                    WHERE lower(p.name) = ?
+                    """,
+                    (self._normalize_product_name(item.product_name),),
+                ).fetchall()
+
+        if not rows:
+            return None, "No price information available"
+
+        target_dimension: Optional[str] = None
+        fallback_warning: Optional[str] = None
+        if item.comparison_mode == "best_unit_value":
+            target_dimension = self._resolve_target_dimension(rows)
+            if target_dimension is None:
+                fallback_warning = (
+                    "Used approximate per-unit comparison across non-comparable units. "
+                    "Results may be suboptimal."
+                )
+
+        best_row = None
+        best_score = None
+        for row in rows:
+            pack_count = int(row["pack_count"]) if row["pack_count"] else 1
+            price_total = float(row["price_total"])
+            if pack_count <= 0:
+                continue
+
+            if item.comparison_mode == "best_unit_value":
+                net_quantity = float(row["net_quantity"])
+                if net_quantity <= 0:
+                    continue
+                if target_dimension is None:
+                    score = price_total / (pack_count * net_quantity)
+                else:
+                    converted_quantity = self._convert_quantity(
+                        net_quantity=net_quantity,
+                        unit=ProductUnit(int(row["quantity_unit"])),
+                        target_dimension=target_dimension,
+                    )
+                    if converted_quantity is None or converted_quantity <= 0:
+                        continue
+                    score = price_total / (pack_count * converted_quantity)
+            else:
+                score = price_total / pack_count
+
+            observed_at = row["observed_at"]
+            if (
+                best_row is None
+                or score < best_score
+                or (score == best_score and observed_at > best_row["observed_at"])
+            ):
+                best_row = row
+                best_score = score
+
+        if best_row is None:
+            if item.comparison_mode == "best_unit_value":
+                return (
+                    None,
+                    "No comparable unit-convertible price information available.",
+                )
+            return None, "No price information available"
+
+        selected_pack = int(best_row["pack_count"]) if best_row["pack_count"] else 1
+        estimated_total = float(best_row["price_total"]) * desired_count / max(1, selected_pack)
+        return (
+            ShoppingOptimizationMatch(
+                item_id=item.item_id,
+                comparison_mode=item.comparison_mode,
+                desired_count=desired_count,
+                store_id=int(best_row["store_id"]),
+                store_name=best_row["store_name"],
+                store_address=best_row["store_address"],
+                store_latitude=float(best_row["store_latitude"]),
+                store_longitude=float(best_row["store_longitude"]),
+                upc=best_row["upc"],
+                product_name=best_row["product_name"],
+                variant_label=best_row["variant_label"],
+                pack_count=int(best_row["pack_count"]),
+                net_quantity=float(best_row["net_quantity"]),
+                quantity_unit=ProductUnit(int(best_row["quantity_unit"])),
+                price_observation_id=int(best_row["price_observation_id"]),
+                observed_price_total=float(best_row["price_total"]),
+                observed_at=best_row["observed_at"],
+                estimated_total_price=estimated_total,
+            ),
+            fallback_warning,
+        )
+
+    def _resolve_target_dimension(self, rows: list[sqlite3.Row]) -> Optional[str]:
+        candidate_dimensions: list[set[str]] = []
+        for row in rows:
+            unit = ProductUnit(int(row["quantity_unit"]))
+            candidate_dimensions.append(self._unit_dimensions(unit))
+        if not candidate_dimensions:
+            return None
+
+        common = set(candidate_dimensions[0])
+        for dimensions in candidate_dimensions[1:]:
+            common &= dimensions
+        if len(common) == 1:
+            return next(iter(common))
+        if len(common) > 1:
+            return "mass"
+        return None
+
+    def _unit_dimensions(self, unit: ProductUnit) -> set[str]:
+        if unit == ProductUnit.EA:
+            return {"count"}
+        if unit in {ProductUnit.LB, ProductUnit.KG, ProductUnit.G}:
+            return {"mass"}
+        if unit in {
+            ProductUnit.LIT,
+            ProductUnit.ML,
+            ProductUnit.GAL,
+            ProductUnit.QT,
+            ProductUnit.PT,
+            ProductUnit.TSP,
+            ProductUnit.TBSP,
+        }:
+            return {"volume"}
+        if unit == ProductUnit.OZ:
+            return {"mass", "volume"}
+        return set()
+
+    def _convert_quantity(
+        self,
+        net_quantity: float,
+        unit: ProductUnit,
+        target_dimension: str,
+    ) -> Optional[float]:
+        if target_dimension == "count":
+            return net_quantity if unit == ProductUnit.EA else None
+        if target_dimension == "mass":
+            factor = self._mass_factor(unit)
+            return net_quantity * factor if factor is not None else None
+        if target_dimension == "volume":
+            factor = self._volume_factor(unit)
+            return net_quantity * factor if factor is not None else None
+        return None
+
+    def _mass_factor(self, unit: ProductUnit) -> Optional[float]:
+        if unit == ProductUnit.G:
+            return 1.0
+        if unit == ProductUnit.KG:
+            return 1000.0
+        if unit == ProductUnit.LB:
+            return 453.59237
+        if unit == ProductUnit.OZ:
+            return 28.349523125
+        return None
+
+    def _volume_factor(self, unit: ProductUnit) -> Optional[float]:
+        if unit == ProductUnit.ML:
+            return 1.0
+        if unit == ProductUnit.LIT:
+            return 1000.0
+        if unit == ProductUnit.GAL:
+            return 3785.411784
+        if unit == ProductUnit.QT:
+            return 946.352946
+        if unit == ProductUnit.PT:
+            return 473.176473
+        if unit == ProductUnit.TSP:
+            return 4.92892159375
+        if unit == ProductUnit.TBSP:
+            return 14.78676478125
+        if unit == ProductUnit.OZ:
+            return 29.5735295625
+        return None
 
     def _resolve_product_id(
         self,

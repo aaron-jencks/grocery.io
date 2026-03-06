@@ -1,14 +1,22 @@
 package com.example.grocerystoreorganizer.data.remote.repository
 
 import com.example.grocerystoreorganizer.data.local.entity.ProductUnit
+import com.example.grocerystoreorganizer.data.local.entity.Comparison
 import com.example.grocerystoreorganizer.data.local.repository.KnownUpcVariant
+import com.example.grocerystoreorganizer.data.local.repository.ParsedPriceTagResult
 import com.example.grocerystoreorganizer.data.local.repository.PriceObservationDto
+import com.example.grocerystoreorganizer.grpc.ComparisonMode
 import com.example.grocerystoreorganizer.grpc.Coordinate
+import com.example.grocerystoreorganizer.grpc.GroceryListOptimizationItem
+import com.example.grocerystoreorganizer.grpc.OptimizeGroceryListRequest
+import com.example.grocerystoreorganizer.grpc.OptimizeGroceryListResponse
+import com.example.grocerystoreorganizer.grpc.ParsePriceTagImageResponse
 import com.example.grocerystoreorganizer.grpc.PriceObservationRequest
 import com.example.grocerystoreorganizer.grpc.ProductUnit as GrpcProductUnit
 import com.example.grocerystoreorganizer.grpc.SaleInfo
 import com.example.grocerystoreorganizer.grpc.StoreInfo
 import com.example.grocerystoreorganizer.grpc.UpcInfo
+import com.google.protobuf.ByteString
 
 internal object GrpcModelMapper {
     fun toKnownUpcVariant(info: UpcInfo): KnownUpcVariant =
@@ -61,9 +69,77 @@ internal object GrpcModelMapper {
                 }
                 .build()
         }
+        input.trainingImageJpeg?.let { jpeg ->
+            requestBuilder.trainingImageJpeg = ByteString.copyFrom(jpeg)
+        }
+        input.trainingImageFilename?.let(requestBuilder::setTrainingImageFilename)
 
         return requestBuilder.build()
     }
+
+    fun toOptimizeGroceryListRequest(
+        items: List<ShoppingOptimizationItemRequest>
+    ): OptimizeGroceryListRequest =
+        OptimizeGroceryListRequest.newBuilder()
+            .addAllItems(
+                items.map { item ->
+                    GroceryListOptimizationItem.newBuilder()
+                        .setItemId(item.itemId)
+                        .setProductName(item.productName)
+                        .setDesiredCount(item.desiredCount)
+                        .setComparisonMode(toGrpcComparison(item.comparisonMode))
+                        .apply { item.preferredUpc?.let(::setPreferredUpc) }
+                        .build()
+                }
+            )
+            .build()
+
+    fun toShoppingOptimizationResponse(
+        response: OptimizeGroceryListResponse
+    ): ShoppingOptimizationResponse =
+        ShoppingOptimizationResponse(
+            matches = response.matchesList.map { match ->
+                ShoppingOptimizationMatch(
+                    itemId = match.itemId,
+                    comparisonMode = toLocalComparison(match.comparisonMode),
+                    desiredCount = match.desiredCount,
+                    storeId = match.store.storeId.toInt(),
+                    storeName = if (match.store.hasStoreName()) match.store.storeName else null,
+                    storeAddress = match.store.storeAddress,
+                    variantUpc = match.variant.upc,
+                    variantProductName = match.variant.productName,
+                    variantLabel = match.variant.variantLabel,
+                    variantPackCount = match.variant.packCount,
+                    variantNetQuantity = match.variant.netQuantity,
+                    variantQuantityUnit = toLocalUnit(match.variant.quantityUnit),
+                    priceObservationId = match.priceObservationId.toInt(),
+                    observedPriceTotal = match.observedPriceTotal,
+                    observedAt = match.observedAt,
+                    estimatedTotalPrice = match.estimatedTotalPrice,
+                )
+            },
+            unmatched = response.unmatchedList.map { item ->
+                ShoppingOptimizationUnmatched(
+                    itemId = item.itemId,
+                    productName = item.productName,
+                    reason = item.reason,
+                )
+            },
+        )
+
+    fun toParsedPriceTagResult(response: ParsePriceTagImageResponse): ParsedPriceTagResult =
+        ParsedPriceTagResult(
+            ambiguous = response.ambiguous,
+            unparsable = response.unparsable,
+            upcParsable = response.upcParsable,
+            upc = if (response.hasUpc()) response.upc else null,
+            priceTotal = if (response.hasPriceTotal()) response.priceTotal else null,
+            packCount = if (response.hasPackCount()) response.packCount else null,
+            netQuantity = if (response.hasNetQuantity()) response.netQuantity else null,
+            quantityUnit = if (response.hasQuantityUnit()) toLocalUnit(response.quantityUnit) else null,
+            isVariableWeight = response.isVariableWeight,
+            message = if (response.hasMessage()) response.message else null,
+        )
 
     private fun toGrpcUnit(unit: ProductUnit): GrpcProductUnit =
         when (unit) {
@@ -77,6 +153,20 @@ internal object GrpcModelMapper {
             ProductUnit.GAL -> GrpcProductUnit.GAL
             ProductUnit.QT -> GrpcProductUnit.QT
             ProductUnit.PT -> GrpcProductUnit.PT
+            ProductUnit.TSP -> GrpcProductUnit.TSP
+            ProductUnit.TBSP -> GrpcProductUnit.TBSP
+        }
+
+    private fun toGrpcComparison(comparison: Comparison): ComparisonMode =
+        when (comparison) {
+            Comparison.cheapestPrice -> ComparisonMode.CHEAPEST_PRICE
+            Comparison.bestUnitValue -> ComparisonMode.BEST_UNIT_VALUE
+        }
+
+    private fun toLocalComparison(comparison: ComparisonMode): Comparison =
+        when (comparison) {
+            ComparisonMode.BEST_UNIT_VALUE -> Comparison.bestUnitValue
+            else -> Comparison.cheapestPrice
         }
 
     private fun toLocalUnit(unit: GrpcProductUnit): ProductUnit =
@@ -91,6 +181,9 @@ internal object GrpcModelMapper {
             GrpcProductUnit.GAL -> ProductUnit.GAL
             GrpcProductUnit.QT -> ProductUnit.QT
             GrpcProductUnit.PT -> ProductUnit.PT
+            GrpcProductUnit.TSP -> ProductUnit.TSP
+            GrpcProductUnit.TBSP -> ProductUnit.TBSP
+            GrpcProductUnit.ITEM -> ProductUnit.EA
             else -> ProductUnit.EA
         }
 }

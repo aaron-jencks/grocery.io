@@ -29,6 +29,14 @@ class CameraDataSource(
         }.getOrNull()
     }
 
+    fun readBytes(uri: String): ByteArray? =
+        runCatching {
+            val parsed = Uri.parse(uri)
+            context.contentResolver.openInputStream(parsed)?.use { input ->
+                input.readBytes()
+            }
+        }.getOrNull()
+
     private fun createImageFile(): File? {
         val dir = File(context.cacheDir, "captured_images").apply {
             if (!exists()) mkdirs()

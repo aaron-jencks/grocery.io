@@ -33,6 +33,18 @@ class GroceryStoreRepository(
         )
     }
 
+    override suspend fun parsePriceTagImage(
+        imageJpeg: ByteArray,
+        imageFilename: String?,
+    ): ParsedPriceTagResult {
+        return ParsedPriceTagResult(
+            ambiguous = false,
+            unparsable = true,
+            upcParsable = false,
+            message = "Photo parsing is only available with the remote server.",
+        )
+    }
+
     override suspend fun insertPriceObservation(input: PriceObservationDto): Int {
         validateInput(input)
 

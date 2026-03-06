@@ -133,6 +133,13 @@ private class FakeDao(
         return if (removed) 1 else 0
     }
 
+    override suspend fun clearAll(): Int {
+        val count = items.size
+        items.clear()
+        publish()
+        return count
+    }
+
     fun currentItems(): List<LocalGroceryListEntry> =
         flow.value.map {
             LocalGroceryListEntry(
@@ -157,6 +164,7 @@ private class FakeDao(
                 productId = it.productId,
                 productName = "Product ${it.productId}",
                 preferredVariantId = it.preferredVariantId,
+                preferredVariantUpc = null,
                 preferredVariantLabel = null,
                 preferredVariantPackCount = null,
                 preferredVariantNetQuantity = null,

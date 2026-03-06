@@ -8,6 +8,7 @@ data class LocalGroceryListItem(
     val productId: Int,
     val productName: String,
     val preferredVariantId: Int?,
+    val preferredVariantUpc: String?,
     val preferredVariantLabel: String?,
     val preferredVariantPackCount: Int?,
     val preferredVariantNetQuantity: Double?,

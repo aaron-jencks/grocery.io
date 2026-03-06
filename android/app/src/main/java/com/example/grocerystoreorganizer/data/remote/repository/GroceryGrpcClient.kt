@@ -4,6 +4,10 @@ import com.example.grocerystoreorganizer.grpc.ListProductsRequest
 import com.example.grocerystoreorganizer.grpc.ListProductsResponse
 import com.example.grocerystoreorganizer.grpc.ListVariantsForProductRequest
 import com.example.grocerystoreorganizer.grpc.ListVariantsForProductResponse
+import com.example.grocerystoreorganizer.grpc.OptimizeGroceryListRequest
+import com.example.grocerystoreorganizer.grpc.OptimizeGroceryListResponse
+import com.example.grocerystoreorganizer.grpc.ParsePriceTagImageRequest
+import com.example.grocerystoreorganizer.grpc.ParsePriceTagImageResponse
 import com.example.grocerystoreorganizer.grpc.PriceObservationRequest
 import com.example.grocerystoreorganizer.grpc.PriceObservationResponse
 import com.example.grocerystoreorganizer.grpc.UpcRequest
@@ -60,6 +64,12 @@ open class GroceryGrpcClient(
 
     open fun createPriceObservation(request: PriceObservationRequest): PriceObservationResponse =
         ClientCalls.blockingUnaryCall(channel, CREATE_PRICE_OBSERVATION_METHOD, CallOptions.DEFAULT, request)
+
+    open fun parsePriceTagImage(request: ParsePriceTagImageRequest): ParsePriceTagImageResponse =
+        ClientCalls.blockingUnaryCall(channel, PARSE_PRICE_TAG_IMAGE_METHOD, CallOptions.DEFAULT, request)
+
+    open fun optimizeGroceryList(request: OptimizeGroceryListRequest): OptimizeGroceryListResponse =
+        ClientCalls.blockingUnaryCall(channel, OPTIMIZE_GROCERY_LIST_METHOD, CallOptions.DEFAULT, request)
 
     open fun shutdown() {
         channel.shutdown()
@@ -121,6 +131,38 @@ open class GroceryGrpcClient(
                 )
                 .setResponseMarshaller(
                     ProtoLiteUtils.marshaller(PriceObservationResponse.getDefaultInstance())
+                )
+                .build()
+
+        private val PARSE_PRICE_TAG_IMAGE_METHOD:
+            MethodDescriptor<ParsePriceTagImageRequest, ParsePriceTagImageResponse> =
+            MethodDescriptor.newBuilder<ParsePriceTagImageRequest, ParsePriceTagImageResponse>()
+                .setType(MethodDescriptor.MethodType.UNARY)
+                .setFullMethodName(MethodDescriptor.generateFullMethodName(
+                    "grocery.database.ParsingService",
+                    "ParsePriceTagImage",
+                ))
+                .setRequestMarshaller(
+                    ProtoLiteUtils.marshaller(ParsePriceTagImageRequest.getDefaultInstance())
+                )
+                .setResponseMarshaller(
+                    ProtoLiteUtils.marshaller(ParsePriceTagImageResponse.getDefaultInstance())
+                )
+                .build()
+
+        private val OPTIMIZE_GROCERY_LIST_METHOD:
+            MethodDescriptor<OptimizeGroceryListRequest, OptimizeGroceryListResponse> =
+            MethodDescriptor.newBuilder<OptimizeGroceryListRequest, OptimizeGroceryListResponse>()
+                .setType(MethodDescriptor.MethodType.UNARY)
+                .setFullMethodName(MethodDescriptor.generateFullMethodName(
+                    "grocery.database.ShoppingService",
+                    "OptimizeGroceryList",
+                ))
+                .setRequestMarshaller(
+                    ProtoLiteUtils.marshaller(OptimizeGroceryListRequest.getDefaultInstance())
+                )
+                .setResponseMarshaller(
+                    ProtoLiteUtils.marshaller(OptimizeGroceryListResponse.getDefaultInstance())
                 )
                 .build()
     }

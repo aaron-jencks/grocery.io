@@ -19,6 +19,7 @@ interface LocalGroceryListEntryDao {
             e.productId as productId,
             p.name as productName,
             e.preferredVariantId as preferredVariantId,
+            v.upc as preferredVariantUpc,
             v.label as preferredVariantLabel,
             v.packCount as preferredVariantPackCount,
             v.netQuantity as preferredVariantNetQuantity,
@@ -49,4 +50,7 @@ interface LocalGroceryListEntryDao {
 
     @Delete
     suspend fun delete(item: LocalGroceryListEntry): Int
+
+    @Query("delete from local_grocery_list_entries")
+    suspend fun clearAll(): Int
 }

@@ -10,12 +10,15 @@ import com.example.grocerystoreorganizer.data.local.repository.ProductCatalogRep
 import com.example.grocerystoreorganizer.data.local.db.DatabaseProvider
 import com.example.grocerystoreorganizer.data.local.repository.LocalGroceryListRepository
 import com.example.grocerystoreorganizer.data.remote.repository.GroceryGrpcClient
+import com.example.grocerystoreorganizer.data.remote.repository.GrpcShoppingOptimizationRepository
 import com.example.grocerystoreorganizer.data.remote.repository.ProductCatalogSyncer
 import com.example.grocerystoreorganizer.ui.grocerylist.GroceryListScreen
 import com.example.grocerystoreorganizer.ui.grocerylist.GroceryListViewModel
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    private var grpcClient: GroceryGrpcClient? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val db = DatabaseProvider.get(this)
@@ -25,9 +28,13 @@ class MainActivity : ComponentActivity() {
             variantDao = db.productVariantDao(),
         )
         val productCatalogRepository = ProductCatalogRepository(db.productDao())
-        if (BuildConfig.USE_REMOTE_DB) {
+        grpcClient = if (BuildConfig.USE_REMOTE_DB) {
+            GroceryGrpcClient(BuildConfig.GRPC_HOST, BuildConfig.GRPC_PORT)
+        } else {
+            null
+        }
+        grpcClient?.let { client ->
             lifecycleScope.launch {
-                val client = GroceryGrpcClient(BuildConfig.GRPC_HOST, BuildConfig.GRPC_PORT)
                 runCatching {
                     ProductCatalogSyncer(client, productCatalogRepository).syncFromServer()
                 }.onSuccess {
@@ -37,15 +44,22 @@ class MainActivity : ComponentActivity() {
                         Toast.LENGTH_SHORT,
                     ).show()
                 }
-                client.shutdown()
             }
         }
         setContent {
             MaterialTheme {
                 GroceryListScreen(
-                    factory = GroceryListViewModel.Factory(repository)
+                    factory = GroceryListViewModel.Factory(
+                        repository = repository,
+                        optimizationRepository = grpcClient?.let { GrpcShoppingOptimizationRepository(it) },
+                    )
                 )
             }
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        grpcClient?.shutdown()
     }
 }

@@ -10,9 +10,11 @@ message UpcRequest {
 }
 
 enum ProductUnit {
+  option allow_alias = true;
   OZ = 0;
   LB = 1;
   EA = 2;
+  ITEM = 2;
   KG = 3;
   G = 4;
   LIT = 5;
@@ -20,6 +22,13 @@ enum ProductUnit {
   GAL = 7;
   QT = 8;
   PT = 9;
+  TSP = 10;
+  TBSP = 11;
+}
+
+enum ComparisonMode {
+  CHEAPEST_PRICE = 0;
+  BEST_UNIT_VALUE = 1;
 }
 
 message UpcInfo {
@@ -99,6 +108,8 @@ message PriceObservationRequest {
   string observedAt = 4;
   bool isSale = 5;
   optional SaleInfo saleInfo = 6;
+  optional bytes trainingImageJpeg = 7;
+  optional string trainingImageFilename = 8;
 }
 
 message PriceObservationResponse {
@@ -107,4 +118,81 @@ message PriceObservationResponse {
 
 service ObservationService {
   rpc CreatePriceObservation(PriceObservationRequest) returns (PriceObservationResponse);
+}
+
+message ParsePriceTagImageRequest {
+  bytes imageJpeg = 1;
+  optional string imageFilename = 2;
+}
+
+message ParsePriceTagImageResponse {
+  bool ambiguous = 1;
+  bool unparsable = 2;
+  bool upcParsable = 3;
+  optional string upc = 4;
+  optional double priceTotal = 5;
+  optional int32 packCount = 6;
+  optional double netQuantity = 7;
+  optional ProductUnit quantityUnit = 8;
+  bool isVariableWeight = 9;
+  optional string message = 10;
+}
+
+service ParsingService {
+  rpc ParsePriceTagImage(ParsePriceTagImageRequest) returns (ParsePriceTagImageResponse);
+}
+
+message GroceryListOptimizationItem {
+  int32 itemId = 1;
+  string productName = 2;
+  int32 desiredCount = 3;
+  ComparisonMode comparisonMode = 4;
+  optional string preferredUpc = 5;
+}
+
+message OptimizeGroceryListRequest {
+  repeated GroceryListOptimizationItem items = 1;
+}
+
+message OptimizedStore {
+  uint32 storeId = 1;
+  optional string storeName = 2;
+  string storeAddress = 3;
+  Coordinate location = 4;
+}
+
+message OptimizedVariant {
+  string upc = 1;
+  string productName = 2;
+  string variantLabel = 3;
+  int32 packCount = 4;
+  double netQuantity = 5;
+  ProductUnit quantityUnit = 6;
+}
+
+message OptimizedItemMatch {
+  int32 itemId = 1;
+  ComparisonMode comparisonMode = 2;
+  int32 desiredCount = 3;
+  OptimizedStore store = 4;
+  OptimizedVariant variant = 5;
+  uint32 priceObservationId = 6;
+  double observedPriceTotal = 7;
+  string observedAt = 8;
+  double estimatedTotalPrice = 9;
+}
+
+message UnmatchedOptimizationItem {
+  int32 itemId = 1;
+  string productName = 2;
+  string reason = 3;
+}
+
+message OptimizeGroceryListResponse {
+  repeated OptimizedItemMatch matches = 1;
+  repeated UnmatchedOptimizationItem unmatched = 2;
+}
+
+service ShoppingService {
+  rpc OptimizeGroceryList(OptimizeGroceryListRequest) returns (OptimizeGroceryListResponse);
 }

@@ -1,5 +1,9 @@
+cascade-config
 google3
 grpcio
 grpcio-tools
 protobuf
 pydantic
+pillow
+torch
+torchvision

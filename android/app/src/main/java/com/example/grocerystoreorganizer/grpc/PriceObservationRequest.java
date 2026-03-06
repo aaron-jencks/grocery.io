@@ -13,6 +13,8 @@ public  final class PriceObservationRequest extends
     PriceObservationRequestOrBuilder {
   private PriceObservationRequest() {
     observedAt_ = "";
+    trainingImageJpeg_ = com.google.protobuf.ByteString.EMPTY;
+    trainingImageFilename_ = "";
   }
   private int bitField0_;
   public static final int STORE_FIELD_NUMBER = 1;
@@ -250,6 +252,96 @@ public  final class PriceObservationRequest extends
    */
   private void clearSaleInfo() {  saleInfo_ = null;
     bitField0_ = (bitField0_ & ~0x00000001);
+  }
+
+  public static final int TRAININGIMAGEJPEG_FIELD_NUMBER = 7;
+  private com.google.protobuf.ByteString trainingImageJpeg_;
+  /**
+   * <code>optional bytes trainingImageJpeg = 7;</code>
+   * @return Whether the trainingImageJpeg field is set.
+   */
+  @java.lang.Override
+  public boolean hasTrainingImageJpeg() {
+    return ((bitField0_ & 0x00000002) != 0);
+  }
+  /**
+   * <code>optional bytes trainingImageJpeg = 7;</code>
+   * @return The trainingImageJpeg.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString getTrainingImageJpeg() {
+    return trainingImageJpeg_;
+  }
+  /**
+   * <code>optional bytes trainingImageJpeg = 7;</code>
+   * @param value The trainingImageJpeg to set.
+   */
+  private void setTrainingImageJpeg(com.google.protobuf.ByteString value) {
+    java.lang.Class<?> valueClass = value.getClass();
+  bitField0_ |= 0x00000002;
+    trainingImageJpeg_ = value;
+  }
+  /**
+   * <code>optional bytes trainingImageJpeg = 7;</code>
+   */
+  private void clearTrainingImageJpeg() {
+    bitField0_ = (bitField0_ & ~0x00000002);
+    trainingImageJpeg_ = getDefaultInstance().getTrainingImageJpeg();
+  }
+
+  public static final int TRAININGIMAGEFILENAME_FIELD_NUMBER = 8;
+  private java.lang.String trainingImageFilename_;
+  /**
+   * <code>optional string trainingImageFilename = 8;</code>
+   * @return Whether the trainingImageFilename field is set.
+   */
+  @java.lang.Override
+  public boolean hasTrainingImageFilename() {
+    return ((bitField0_ & 0x00000004) != 0);
+  }
+  /**
+   * <code>optional string trainingImageFilename = 8;</code>
+   * @return The trainingImageFilename.
+   */
+  @java.lang.Override
+  public java.lang.String getTrainingImageFilename() {
+    return trainingImageFilename_;
+  }
+  /**
+   * <code>optional string trainingImageFilename = 8;</code>
+   * @return The bytes for trainingImageFilename.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getTrainingImageFilenameBytes() {
+    return com.google.protobuf.ByteString.copyFromUtf8(trainingImageFilename_);
+  }
+  /**
+   * <code>optional string trainingImageFilename = 8;</code>
+   * @param value The trainingImageFilename to set.
+   */
+  private void setTrainingImageFilename(
+      java.lang.String value) {
+    java.lang.Class<?> valueClass = value.getClass();
+  bitField0_ |= 0x00000004;
+    trainingImageFilename_ = value;
+  }
+  /**
+   * <code>optional string trainingImageFilename = 8;</code>
+   */
+  private void clearTrainingImageFilename() {
+    bitField0_ = (bitField0_ & ~0x00000004);
+    trainingImageFilename_ = getDefaultInstance().getTrainingImageFilename();
+  }
+  /**
+   * <code>optional string trainingImageFilename = 8;</code>
+   * @param value The bytes for trainingImageFilename to set.
+   */
+  private void setTrainingImageFilenameBytes(
+      com.google.protobuf.ByteString value) {
+    checkByteStringIsUtf8(value);
+    trainingImageFilename_ = value.toStringUtf8();
+    bitField0_ |= 0x00000004;
   }
 
   public static com.example.grocerystoreorganizer.grpc.PriceObservationRequest parseFrom(
@@ -593,6 +685,99 @@ public  final class PriceObservationRequest extends
       return this;
     }
 
+    /**
+     * <code>optional bytes trainingImageJpeg = 7;</code>
+     * @return Whether the trainingImageJpeg field is set.
+     */
+    @java.lang.Override
+    public boolean hasTrainingImageJpeg() {
+      return instance.hasTrainingImageJpeg();
+    }
+    /**
+     * <code>optional bytes trainingImageJpeg = 7;</code>
+     * @return The trainingImageJpeg.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString getTrainingImageJpeg() {
+      return instance.getTrainingImageJpeg();
+    }
+    /**
+     * <code>optional bytes trainingImageJpeg = 7;</code>
+     * @param value The trainingImageJpeg to set.
+     * @return This builder for chaining.
+     */
+    public Builder setTrainingImageJpeg(com.google.protobuf.ByteString value) {
+      copyOnWrite();
+      instance.setTrainingImageJpeg(value);
+      return this;
+    }
+    /**
+     * <code>optional bytes trainingImageJpeg = 7;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearTrainingImageJpeg() {
+      copyOnWrite();
+      instance.clearTrainingImageJpeg();
+      return this;
+    }
+
+    /**
+     * <code>optional string trainingImageFilename = 8;</code>
+     * @return Whether the trainingImageFilename field is set.
+     */
+    @java.lang.Override
+    public boolean hasTrainingImageFilename() {
+      return instance.hasTrainingImageFilename();
+    }
+    /**
+     * <code>optional string trainingImageFilename = 8;</code>
+     * @return The trainingImageFilename.
+     */
+    @java.lang.Override
+    public java.lang.String getTrainingImageFilename() {
+      return instance.getTrainingImageFilename();
+    }
+    /**
+     * <code>optional string trainingImageFilename = 8;</code>
+     * @return The bytes for trainingImageFilename.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getTrainingImageFilenameBytes() {
+      return instance.getTrainingImageFilenameBytes();
+    }
+    /**
+     * <code>optional string trainingImageFilename = 8;</code>
+     * @param value The trainingImageFilename to set.
+     * @return This builder for chaining.
+     */
+    public Builder setTrainingImageFilename(
+        java.lang.String value) {
+      copyOnWrite();
+      instance.setTrainingImageFilename(value);
+      return this;
+    }
+    /**
+     * <code>optional string trainingImageFilename = 8;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearTrainingImageFilename() {
+      copyOnWrite();
+      instance.clearTrainingImageFilename();
+      return this;
+    }
+    /**
+     * <code>optional string trainingImageFilename = 8;</code>
+     * @param value The bytes for trainingImageFilename to set.
+     * @return This builder for chaining.
+     */
+    public Builder setTrainingImageFilenameBytes(
+        com.google.protobuf.ByteString value) {
+      copyOnWrite();
+      instance.setTrainingImageFilenameBytes(value);
+      return this;
+    }
+
     // @@protoc_insertion_point(builder_scope:grocery.database.PriceObservationRequest)
   }
   @java.lang.Override
@@ -616,10 +801,12 @@ public  final class PriceObservationRequest extends
             "observedAt_",
             "isSale_",
             "saleInfo_",
+            "trainingImageJpeg_",
+            "trainingImageFilename_",
           };
           java.lang.String info =
-              "\u0000\u0006\u0000\u0001\u0001\u0006\u0006\u0000\u0000\u0000\u0001\t\u0002\t\u0003" +
-              "\u0000\u0004\u0208\u0005\u0007\u0006\u1009\u0000";
+              "\u0000\b\u0000\u0001\u0001\b\b\u0000\u0000\u0000\u0001\t\u0002\t\u0003\u0000\u0004" +
+              "\u0208\u0005\u0007\u0006\u1009\u0000\u0007\u100a\u0001\b\u1208\u0002";
           return newMessageInfo(DEFAULT_INSTANCE, info, objects);
       }
       // fall through

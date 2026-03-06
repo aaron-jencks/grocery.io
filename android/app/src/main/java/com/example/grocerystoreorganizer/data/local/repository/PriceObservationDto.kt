@@ -19,6 +19,8 @@ data class PriceObservationDto(
     val observedAt: String,
     val isSale: Boolean = false,
     val sale: SaleDto? = null,
+    val trainingImageJpeg: ByteArray? = null,
+    val trainingImageFilename: String? = null,
 )
 
 data class SaleDto(
@@ -26,4 +28,17 @@ data class SaleDto(
     val expirationDate: String? = null,
     val minimumQuantity: Int? = null,
     val limitQuantity: Int? = null,
+)
+
+data class ParsedPriceTagResult(
+    val ambiguous: Boolean,
+    val unparsable: Boolean,
+    val upcParsable: Boolean,
+    val upc: String? = null,
+    val priceTotal: Double? = null,
+    val packCount: Int? = null,
+    val netQuantity: Double? = null,
+    val quantityUnit: ProductUnit? = null,
+    val isVariableWeight: Boolean = false,
+    val message: String? = null,
 )

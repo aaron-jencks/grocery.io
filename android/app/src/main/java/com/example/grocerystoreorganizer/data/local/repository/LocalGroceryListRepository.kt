@@ -109,6 +109,10 @@ class LocalGroceryListRepository(
         dao.updateItems(current.copy(desiredCount = next))
     }
 
+    suspend fun clearAllItems() {
+        dao.clearAll()
+    }
+
     private suspend fun normalizeSortOrder() {
         val items = dao.observeAll().first()
         dao.updateItems(

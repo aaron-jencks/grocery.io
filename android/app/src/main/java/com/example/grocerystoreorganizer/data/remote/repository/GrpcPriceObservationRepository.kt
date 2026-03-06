@@ -1,9 +1,12 @@
 package com.example.grocerystoreorganizer.data.remote.repository
 
 import com.example.grocerystoreorganizer.data.local.repository.KnownUpcVariant
+import com.example.grocerystoreorganizer.data.local.repository.ParsedPriceTagResult
 import com.example.grocerystoreorganizer.data.local.repository.PriceObservationCrudRepository
 import com.example.grocerystoreorganizer.data.local.repository.PriceObservationDto
+import com.example.grocerystoreorganizer.grpc.ParsePriceTagImageRequest
 import com.example.grocerystoreorganizer.grpc.UpcRequest
+import com.google.protobuf.ByteString
 import io.grpc.StatusRuntimeException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -28,6 +31,22 @@ class GrpcPriceObservationRepository(
             }
         } catch (e: StatusRuntimeException) {
             throw IllegalStateException(e.status.description ?: "Failed to resolve UPC", e)
+        }
+    }
+
+    override suspend fun parsePriceTagImage(
+        imageJpeg: ByteArray,
+        imageFilename: String?,
+    ): ParsedPriceTagResult = withContext(Dispatchers.IO) {
+        try {
+            val request = ParsePriceTagImageRequest.newBuilder()
+                .setImageJpeg(ByteString.copyFrom(imageJpeg))
+                .apply { imageFilename?.let(::setImageFilename) }
+                .build()
+            val response = client.parsePriceTagImage(request)
+            GrpcModelMapper.toParsedPriceTagResult(response)
+        } catch (e: StatusRuntimeException) {
+            throw IllegalStateException(e.status.description ?: "Failed to parse price-tag image", e)
         }
     }
 

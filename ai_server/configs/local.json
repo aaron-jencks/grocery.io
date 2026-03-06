@@ -1,0 +1,11 @@
+{
+  "dataset": {
+    "train_manifest": "/workspace/github/grocery.io/ai_server/data/train.jsonl",
+    "val_manifest": "/workspace/github/grocery.io/ai_server/data/val.jsonl",
+    "image_root": "/workspace/github/grocery.io/ai_server/data/images"
+  },
+  "train": {
+    "output_dir": "/workspace/github/grocery.io/ai_server/outputs/local-run",
+    "batch_size": 16
+  }
+}

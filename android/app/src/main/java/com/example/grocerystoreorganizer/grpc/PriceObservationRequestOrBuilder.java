@@ -63,4 +63,32 @@ public interface PriceObservationRequestOrBuilder extends
    * @return The saleInfo.
    */
   com.example.grocerystoreorganizer.grpc.SaleInfo getSaleInfo();
+
+  /**
+   * <code>optional bytes trainingImageJpeg = 7;</code>
+   * @return Whether the trainingImageJpeg field is set.
+   */
+  boolean hasTrainingImageJpeg();
+  /**
+   * <code>optional bytes trainingImageJpeg = 7;</code>
+   * @return The trainingImageJpeg.
+   */
+  com.google.protobuf.ByteString getTrainingImageJpeg();
+
+  /**
+   * <code>optional string trainingImageFilename = 8;</code>
+   * @return Whether the trainingImageFilename field is set.
+   */
+  boolean hasTrainingImageFilename();
+  /**
+   * <code>optional string trainingImageFilename = 8;</code>
+   * @return The trainingImageFilename.
+   */
+  java.lang.String getTrainingImageFilename();
+  /**
+   * <code>optional string trainingImageFilename = 8;</code>
+   * @return The bytes for trainingImageFilename.
+   */
+  com.google.protobuf.ByteString
+      getTrainingImageFilenameBytes();
 }

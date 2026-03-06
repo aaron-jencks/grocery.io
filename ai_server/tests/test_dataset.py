@@ -32,6 +32,9 @@ class PriceTagDatasetStoreTest(unittest.TestCase):
             assert record is not None
             self.assertEqual(4.99, record.price)
             self.assertEqual("123456789012", record.upc_code)
+            self.assertFalse(record.is_ambiguous)
+            self.assertFalse(record.is_unparsable)
+            self.assertFalse(record.is_variable_weight)
 
     def test_dataset_file_is_json_list(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -43,6 +46,30 @@ class PriceTagDatasetStoreTest(unittest.TestCase):
 
             self.assertIsInstance(payload, list)
             self.assertEqual("image-1.jpg", payload[0]["image_filename"])
+
+    def test_missing_quality_flags_default_false(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            dataset_path = Path(temp_dir) / "dataset.json"
+            dataset_path.write_text(
+                json.dumps(
+                    [
+                        {
+                            "image_filename": "image-legacy.jpg",
+                            "status": "labeled",
+                            "price": 3.5,
+                        }
+                    ]
+                )
+            )
+
+            store = PriceTagDatasetStore(dataset_path)
+            record = store.get("image-legacy.jpg")
+
+            self.assertIsNotNone(record)
+            assert record is not None
+            self.assertFalse(record.is_ambiguous)
+            self.assertFalse(record.is_unparsable)
+            self.assertFalse(record.is_variable_weight)
 
 
 class ImageListingTest(unittest.TestCase):

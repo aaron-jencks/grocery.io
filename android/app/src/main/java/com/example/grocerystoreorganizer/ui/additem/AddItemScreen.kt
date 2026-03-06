@@ -97,6 +97,27 @@ fun AddItemScreen() {
             text = { Text(message) },
         )
     }
+    state.parseDialogMessage?.let { message ->
+        AlertDialog(
+            onDismissRequest = vm::acknowledgeParseDialog,
+            confirmButton = {
+                TextButton(onClick = vm::acknowledgeParseDialog) {
+                    Text("Continue manual")
+                }
+            },
+            dismissButton = if (state.parseDialogAllowRetry) {
+                {
+                    TextButton(onClick = vm::retryPhotoFromParseDialog) {
+                        Text("Try again")
+                    }
+                }
+            } else {
+                null
+            },
+            title = { Text("Photo Parse Result") },
+            text = { Text(message) },
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -345,6 +366,12 @@ fun AddItemScreen() {
                     Button(onClick = vm::requestPhotoCapture) {
                         Text("Take photo")
                     }
+                    Button(
+                        onClick = vm::parseCapturedPhoto,
+                        enabled = state.photo is PhotoUiState.Ready && !state.isParsingPhoto,
+                    ) {
+                        Text(if (state.isParsingPhoto) "Parsing..." else "Parse photo")
+                    }
                     if (state.photo is PhotoUiState.Ready) {
                         TextButton(onClick = vm::clearPhoto) { Text("Remove") }
                     }
@@ -363,6 +390,9 @@ fun AddItemScreen() {
                     is PhotoUiState.LaunchCapture -> Text("Launching camera...")
                     is PhotoUiState.Ready -> Text("Photo saved: ${p.outputUri}")
                     is PhotoUiState.Error -> Text(p.message, color = MaterialTheme.colorScheme.error)
+                }
+                if (state.isParsingPhoto) {
+                    Text("Extracting fields from photo...")
                 }
             }
         }

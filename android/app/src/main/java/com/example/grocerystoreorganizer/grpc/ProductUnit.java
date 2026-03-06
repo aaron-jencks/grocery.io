@@ -48,9 +48,21 @@ public enum ProductUnit
    * <code>PT = 9;</code>
    */
   PT(9),
+  /**
+   * <code>TSP = 10;</code>
+   */
+  TSP(10),
+  /**
+   * <code>TBSP = 11;</code>
+   */
+  TBSP(11),
   UNRECOGNIZED(-1),
   ;
 
+  /**
+   * <code>ITEM = 2;</code>
+   */
+  public static final ProductUnit ITEM = EA;
   /**
    * <code>OZ = 0;</code>
    */
@@ -63,6 +75,10 @@ public enum ProductUnit
    * <code>EA = 2;</code>
    */
   public static final int EA_VALUE = 2;
+  /**
+   * <code>ITEM = 2;</code>
+   */
+  public static final int ITEM_VALUE = 2;
   /**
    * <code>KG = 3;</code>
    */
@@ -91,6 +107,14 @@ public enum ProductUnit
    * <code>PT = 9;</code>
    */
   public static final int PT_VALUE = 9;
+  /**
+   * <code>TSP = 10;</code>
+   */
+  public static final int TSP_VALUE = 10;
+  /**
+   * <code>TBSP = 11;</code>
+   */
+  public static final int TBSP_VALUE = 11;
 
 
   @java.lang.Override
@@ -124,6 +148,8 @@ public enum ProductUnit
       case 7: return GAL;
       case 8: return QT;
       case 9: return PT;
+      case 10: return TSP;
+      case 11: return TBSP;
       default: return null;
     }
   }

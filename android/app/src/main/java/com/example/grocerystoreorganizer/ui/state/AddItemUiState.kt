@@ -29,6 +29,9 @@ data class AddItemUiState(
 
     val location: LocationUiState = LocationUiState.Idle,
     val photo: PhotoUiState = PhotoUiState.Idle,
+    val isParsingPhoto: Boolean = false,
+    val parseDialogMessage: String? = null,
+    val parseDialogAllowRetry: Boolean = false,
 
     val isSaving: Boolean = false,
     val savedId: Int? = null,

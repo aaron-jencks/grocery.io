@@ -1,5 +1,6 @@
 {
   "dataset": {
+    "labels_path": "/absolute/path/to/labels.json",
     "train_manifest": "/absolute/path/to/train.jsonl",
     "val_manifest": "/absolute/path/to/val.jsonl",
     "image_root": "/absolute/path/to/images"
@@ -7,5 +8,8 @@
   "train": {
     "output_dir": "outputs/local-run",
     "batch_size": 16
+  },
+  "scheduler": {
+    "name": "cosine"
   }
 }

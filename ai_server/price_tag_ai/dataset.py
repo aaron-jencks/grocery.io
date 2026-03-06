@@ -13,6 +13,9 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 class PriceTagRecord(BaseModel):
     image_filename: str
     status: str = "labeled"
+    is_ambiguous: bool = False
+    is_unparsable: bool = False
+    is_variable_weight: bool = False
     price: float | None = None
     net_quantity: float | None = None
     quantity_unit: str | None = None

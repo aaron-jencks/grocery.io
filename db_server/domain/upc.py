@@ -14,6 +14,8 @@ class ProductUnit(Enum):
     GAL = 7
     QT = 8
     PT = 9
+    TSP = 10
+    TBSP = 11
 
 
 @dataclass

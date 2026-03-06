@@ -12,4 +12,6 @@ class CameraRepository(
         val uri = dataSource.createImageUri() ?: return CameraResult.Error("Could not prepare image capture")
         return CameraResult.Ready(uri.toString())
     }
+
+    fun readBytes(uri: String): ByteArray? = dataSource.readBytes(uri)
 }

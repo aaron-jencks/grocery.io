@@ -51,6 +51,13 @@ python -m price_tag_ai.train --config configs/base.json --config run_configs/loc
 
 Later configs override earlier ones.
 
+Training pipeline behavior:
+
+- reads labels from `dataset.labels_path` (default `data/labels.json`)
+- excludes only `status in {"trashed","skipped"}` and uses flagged samples for ambiguity/unparsable supervision
+- deterministically generates train/val JSONL manifests (`dataset.train_manifest`, `dataset.val_manifest`) using `dataset.val_ratio`
+- trains a multitask ResNet model (price, unit, net quantity, pack count, variable-weight, ambiguous, unparsable) and saves timestamped checkpoints (for example `best-20260306T120000Z.pt`, `epoch-005-20260306T120000Z.pt`) plus `training_metrics.json` to `train.output_dir`
+
 ## Labeling Tool
 
 The preprocessing GUI is a PyQt app that walks a directory of price-tag photos and writes a JSON dataset file.
@@ -83,7 +90,10 @@ python -m price_tag_ai.labeler --images-dir /path/to/photos --dataset /path/to/d
 
 Behavior:
 
+- runs an OpenAI connectivity smoke test at startup using your current config/secrets and warns if it fails
 - loads images one by one from the directory
+- rotates displayed images by 90 degrees for current camera orientation
+- compresses/resizes images before OpenAI upload and applies a request timeout so failures surface quickly
 - prepopulates fields from an existing dataset entry when present
 - otherwise calls OpenAI to prefill numeric fields using structured outputs
 - lets you `Submit`, `Skip`, `Trash`, `Back`, and `Next`
