@@ -100,4 +100,54 @@ public interface UpcInfoOrBuilder extends
    */
   com.google.protobuf.ByteString
       getUpdatedAtBytes();
+
+  /**
+   * <code>optional string brand = 10;</code>
+   * @return Whether the brand field is set.
+   */
+  boolean hasBrand();
+  /**
+   * <code>optional string brand = 10;</code>
+   * @return The brand.
+   */
+  java.lang.String getBrand();
+  /**
+   * <code>optional string brand = 10;</code>
+   * @return The bytes for brand.
+   */
+  com.google.protobuf.ByteString
+      getBrandBytes();
+
+  /**
+   * <code>optional string flavor = 11;</code>
+   * @return Whether the flavor field is set.
+   */
+  boolean hasFlavor();
+  /**
+   * <code>optional string flavor = 11;</code>
+   * @return The flavor.
+   */
+  java.lang.String getFlavor();
+  /**
+   * <code>optional string flavor = 11;</code>
+   * @return The bytes for flavor.
+   */
+  com.google.protobuf.ByteString
+      getFlavorBytes();
+
+  /**
+   * <code>optional .grocery.database.PackagingStyle packagingStyle = 12;</code>
+   * @return Whether the packagingStyle field is set.
+   */
+  boolean hasPackagingStyle();
+  /**
+   * <code>optional .grocery.database.PackagingStyle packagingStyle = 12;</code>
+   * @return The enum numeric value on the wire for packagingStyle.
+   */
+  int getPackagingStyleValue();
+  /**
+   * <code>optional .grocery.database.PackagingStyle packagingStyle = 12;</code>
+   * @return The packagingStyle.
+   */
+  com.example.grocerystoreorganizer.grpc.PackagingStyle getPackagingStyle();
 }

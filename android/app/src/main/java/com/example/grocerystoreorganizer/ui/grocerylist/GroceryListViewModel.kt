@@ -3,6 +3,8 @@ package com.example.grocerystoreorganizer.ui.grocerylist
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.grocerystoreorganizer.data.local.entity.PackagingStyle
+import com.example.grocerystoreorganizer.data.local.entity.ProductUnit
 import com.example.grocerystoreorganizer.data.local.repository.LocalGroceryListItem
 import com.example.grocerystoreorganizer.data.local.repository.LocalGroceryListRepository
 import com.example.grocerystoreorganizer.data.remote.repository.GrpcShoppingOptimizationRepository
@@ -23,8 +25,16 @@ data class OptimizedItemUi(
     val itemId: Int,
     val itemName: String,
     val variantLabel: String,
+    val variantBrand: String? = null,
+    val variantFlavor: String? = null,
+    val variantPackagingStyle: PackagingStyle? = null,
     val observedAt: String,
     val estimatedPrice: Double,
+    val upc: String? = null,
+    val packCount: Int? = null,
+    val netQuantity: Double? = null,
+    val quantityUnit: ProductUnit? = null,
+    val isVariableWeight: Boolean = false,
     val checked: Boolean,
 )
 
@@ -36,7 +46,7 @@ data class OptimizedStoreGroupUi(
 
 data class OptimizationResultUi(
     val groups: List<OptimizedStoreGroupUi> = emptyList(),
-    val unknown: List<String> = emptyList(),
+    val unknown: List<OptimizedItemUi> = emptyList(),
     val warnings: List<String> = emptyList(),
     val totalPrice: Double = 0.0,
 )
@@ -128,8 +138,16 @@ class GroceryListViewModel(
                                     itemId = match.itemId,
                                     itemName = nameById[match.itemId] ?: match.variantProductName,
                                     variantLabel = match.variantLabel,
+                                    variantBrand = match.variantBrand,
+                                    variantFlavor = match.variantFlavor,
+                                    variantPackagingStyle = match.variantPackagingStyle,
                                     observedAt = match.observedAt,
                                     estimatedPrice = match.estimatedTotalPrice,
+                                    upc = match.variantUpc,
+                                    packCount = match.variantPackCount,
+                                    netQuantity = match.variantNetQuantity,
+                                    quantityUnit = match.variantQuantityUnit,
+                                    isVariableWeight = false,
                                     checked = checkedIds.contains(match.itemId),
                                 )
                             }
@@ -145,7 +163,14 @@ class GroceryListViewModel(
                     unknown = response.unmatched
                         .filter { !it.reason.startsWith("Warning:", ignoreCase = true) }
                         .map { unmatched ->
-                            "${nameById[unmatched.itemId] ?: unmatched.productName}: ${unmatched.reason}"
+                            OptimizedItemUi(
+                                itemId = unmatched.itemId,
+                                itemName = nameById[unmatched.itemId] ?: unmatched.productName,
+                                variantLabel = unmatched.reason,
+                                observedAt = "",
+                                estimatedPrice = 0.0,
+                                checked = checkedIds.contains(unmatched.itemId),
+                            )
                         },
                     warnings = response.unmatched
                         .filter { it.reason.startsWith("Warning:", ignoreCase = true) }
@@ -171,8 +196,17 @@ class GroceryListViewModel(
         if (!next.add(itemId)) {
             next.remove(itemId)
         }
+        applyCheckedIds(next)
+    }
+
+    fun markOptimizedItemChecked(itemId: Int) {
+        val next = _checkedOptimizedIds.value.toMutableSet()
+        next.add(itemId)
+        applyCheckedIds(next)
+    }
+
+    private fun applyCheckedIds(next: Set<Int>) {
         _checkedOptimizedIds.value = next
-        // Rebuild check states in-place for current optimization result.
         val updatedGroups = _optimizationResult.value.groups.map { group ->
             group.copy(
                 items = group.items.map { item ->
@@ -180,7 +214,13 @@ class GroceryListViewModel(
                 }
             )
         }
-        _optimizationResult.value = _optimizationResult.value.copy(groups = updatedGroups)
+        val updatedUnknown = _optimizationResult.value.unknown.map { item ->
+            item.copy(checked = next.contains(item.itemId))
+        }
+        _optimizationResult.value = _optimizationResult.value.copy(
+            groups = updatedGroups,
+            unknown = updatedUnknown,
+        )
     }
 
     fun completeList() {

@@ -1,6 +1,6 @@
 package com.example.grocerystoreorganizer.ui.grocerylist
 
-import android.content.Intent
+import android.app.Activity
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,7 +33,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -47,11 +46,15 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.grocerystoreorganizer.EditGroceryListItemActivity
 import com.example.grocerystoreorganizer.PriceObservationActivity
 import com.example.grocerystoreorganizer.data.local.repository.LocalGroceryListItem
+import com.example.grocerystoreorganizer.data.local.repository.buildVariantLabel
+import com.example.grocerystoreorganizer.ui.additem.PriceObservationPrefill
 import java.time.OffsetDateTime
 import java.time.format.DateTimeParseException
 import kotlin.math.abs
@@ -69,6 +72,16 @@ fun GroceryListScreen(
     val optimizationLoading by vm.optimizationLoading.collectAsStateWithLifecycle()
     val optimizationResult by vm.optimizationResult.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val observationLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val completedItemId = PriceObservationActivity.extractCompletedItemId(result.data)
+            if (completedItemId != null) {
+                vm.markOptimizedItemChecked(completedItemId)
+            }
+        }
+    }
     var draggingItemId by remember { mutableIntStateOf(-1) }
     var dragAccumulatedY by remember { mutableFloatStateOf(0f) }
 
@@ -82,24 +95,34 @@ fun GroceryListScreen(
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
-            TopAppBar(
-                modifier = Modifier.statusBarsPadding(),
-                title = { Text("Grocery List") },
-                actions = {
+            Column(
+                modifier = Modifier
+                    .statusBarsPadding()
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text("Grocery.io", style = MaterialTheme.typography.titleLarge)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     if (mode == GroceryListMode.EDIT) {
                         Button(onClick = vm::optimizeShoppingPlan) {
                             Text("Optimize")
                         }
                     } else {
+                        Button(onClick = vm::optimizeShoppingPlan) {
+                            Text("Re-optimize")
+                        }
                         Button(onClick = vm::backToEditMode) {
                             Text("Edit")
                         }
                     }
                     Button(
                         onClick = {
-                            context.startActivity(
-                                Intent(context, PriceObservationActivity::class.java)
-                            )
+                            context.startActivity(PriceObservationActivity.createIntent(context))
                         }
                     ) {
                         Text(
@@ -109,7 +132,7 @@ fun GroceryListScreen(
                         )
                     }
                 }
-            )
+            }
         },
         floatingActionButton = {
             if (mode == GroceryListMode.EDIT) {
@@ -150,6 +173,26 @@ fun GroceryListScreen(
                 loading = optimizationLoading,
                 result = optimizationResult,
                 onToggleChecked = vm::toggleOptimizedItemChecked,
+                onAddObservation = { item ->
+                    observationLauncher.launch(
+                        PriceObservationActivity.createIntent(
+                            context,
+                            PriceObservationPrefill(
+                                productName = item.itemName,
+                                variantLabel = item.variantLabel.ifBlank { null },
+                                brand = item.variantBrand,
+                                flavor = item.variantFlavor,
+                                packagingStyle = item.variantPackagingStyle,
+                                upc = item.upc,
+                                packCount = item.packCount,
+                                netQuantity = item.netQuantity,
+                                quantityUnit = item.quantityUnit,
+                                isVariableWeight = item.isVariableWeight,
+                            ),
+                            sourceItemId = item.itemId,
+                        )
+                    )
+                },
                 onCompleteList = vm::completeList,
                 modifier = Modifier
                     .fillMaxSize()
@@ -229,6 +272,7 @@ private fun OptimizedModeContent(
     loading: Boolean,
     result: OptimizationResultUi,
     onToggleChecked: (Int) -> Unit,
+    onAddObservation: (OptimizedItemUi) -> Unit,
     onCompleteList: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -267,7 +311,7 @@ private fun OptimizedModeContent(
                             )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "${item.itemName} (${item.variantLabel})",
+                                    text = "${item.itemName} (${buildVariantLabel(item.variantBrand, item.variantFlavor, item.variantPackagingStyle, item.variantLabel)})",
                                     textDecoration = if (item.checked) TextDecoration.LineThrough else null,
                                 )
                                 Text(
@@ -280,6 +324,13 @@ private fun OptimizedModeContent(
                                 text = "$${"%.2f".format(item.estimatedPrice)}",
                                 textDecoration = if (item.checked) TextDecoration.LineThrough else null,
                             )
+                            Button(onClick = { onAddObservation(item) }) {
+                                Text(
+                                    text = "$",
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    style = MaterialTheme.typography.titleMedium,
+                                )
+                            }
                         }
                     }
                     Text(
@@ -298,7 +349,35 @@ private fun OptimizedModeContent(
                     ) {
                         Text("Unknown", style = MaterialTheme.typography.titleMedium)
                         result.unknown.forEach { unknown ->
-                            Text("• $unknown", style = MaterialTheme.typography.bodyMedium)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Checkbox(
+                                    checked = unknown.checked,
+                                    onCheckedChange = { onToggleChecked(unknown.itemId) },
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = unknown.itemName,
+                                        textDecoration = if (unknown.checked) TextDecoration.LineThrough else null,
+                                    )
+                                    Text(
+                                        text = unknown.variantLabel,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textDecoration = if (unknown.checked) TextDecoration.LineThrough else null,
+                                    )
+                                }
+                                Button(onClick = { onAddObservation(unknown) }) {
+                                    Text(
+                                        text = "$",
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                        style = MaterialTheme.typography.titleMedium,
+                                    )
+                                }
+                            }
                         }
                     }
                 }

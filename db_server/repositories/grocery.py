@@ -7,7 +7,7 @@ from typing import Optional
 
 from db_server.db.connection import Database
 from db_server.domain.observation import PriceObservation, Sale, Store
-from db_server.domain.upc import Product, ProductUnit, ProductVariant
+from db_server.domain.upc import PackagingStyle, Product, ProductUnit, ProductVariant
 from db_server.domain.commands import PriceObservationInput, SaleInput
 
 
@@ -33,6 +33,9 @@ class ShoppingOptimizationMatch:
     upc: str
     product_name: str
     variant_label: str
+    variant_brand: Optional[str]
+    variant_flavor: Optional[str]
+    variant_packaging_style: Optional[PackagingStyle]
     pack_count: int
     net_quantity: float
     quantity_unit: ProductUnit
@@ -112,6 +115,9 @@ class GroceryRepository:
                     SELECT
                         v.rowid AS variant_id,
                         v.label,
+                        v.brand,
+                        v.flavor,
+                        v.packaging_style,
                         v.pack_count,
                         v.net_quantity,
                         v.quantity_unit,
@@ -135,6 +141,9 @@ class GroceryRepository:
                     SELECT
                         v.rowid AS variant_id,
                         v.label,
+                        v.brand,
+                        v.flavor,
+                        v.packaging_style,
                         v.pack_count,
                         v.net_quantity,
                         v.quantity_unit,
@@ -177,6 +186,9 @@ class GroceryRepository:
                 SELECT
                     v.rowid AS variant_id,
                     v.label,
+                    v.brand,
+                    v.flavor,
+                    v.packaging_style,
                     v.pack_count,
                     v.net_quantity,
                     v.quantity_unit,
@@ -244,6 +256,9 @@ class GroceryRepository:
                     s.longitude,
                     v.rowid AS variant_id,
                     v.label,
+                    v.brand,
+                    v.flavor,
+                    v.packaging_style,
                     v.pack_count,
                     v.net_quantity,
                     v.quantity_unit,
@@ -374,6 +389,9 @@ class GroceryRepository:
                         s.longitude AS store_longitude,
                         v.rowid AS variant_id,
                         v.label AS variant_label,
+                        v.brand AS variant_brand,
+                        v.flavor AS variant_flavor,
+                        v.packaging_style AS variant_packaging_style,
                         v.pack_count,
                         v.net_quantity,
                         v.quantity_unit,
@@ -401,6 +419,9 @@ class GroceryRepository:
                         s.longitude AS store_longitude,
                         v.rowid AS variant_id,
                         v.label AS variant_label,
+                        v.brand AS variant_brand,
+                        v.flavor AS variant_flavor,
+                        v.packaging_style AS variant_packaging_style,
                         v.pack_count,
                         v.net_quantity,
                         v.quantity_unit,
@@ -486,6 +507,9 @@ class GroceryRepository:
                 upc=best_row["upc"],
                 product_name=best_row["product_name"],
                 variant_label=best_row["variant_label"],
+                variant_brand=best_row["variant_brand"],
+                variant_flavor=best_row["variant_flavor"],
+                variant_packaging_style=self._packaging_style_from_db(best_row["variant_packaging_style"]),
                 pack_count=int(best_row["pack_count"]),
                 net_quantity=float(best_row["net_quantity"]),
                 quantity_unit=ProductUnit(int(best_row["quantity_unit"])),
@@ -615,6 +639,14 @@ class GroceryRepository:
         payload: PriceObservationInput,
         product_id: int,
     ) -> int:
+        normalized_brand = self._normalize_descriptor(payload.brand)
+        normalized_flavor = self._normalize_descriptor(payload.flavor)
+        normalized_label = self._build_variant_label(
+            brand=normalized_brand,
+            flavor=normalized_flavor,
+            packaging_style=payload.packaging_style,
+            fallback=payload.variant_label,
+        )
         row = connection.execute(
             "SELECT rowid, product_id FROM variants WHERE upc = ?",
             (payload.upc,),
@@ -626,6 +658,9 @@ class GroceryRepository:
                 """
                 UPDATE variants
                 SET label = ?,
+                    brand = ?,
+                    flavor = ?,
+                    packaging_style = ?,
                     pack_count = ?,
                     net_quantity = ?,
                     quantity_unit = ?,
@@ -634,7 +669,10 @@ class GroceryRepository:
                 WHERE rowid = ?
                 """,
                 (
-                    payload.variant_label,
+                    normalized_label,
+                    normalized_brand,
+                    normalized_flavor,
+                    self._packaging_style_to_db(payload.packaging_style),
                     payload.pack_count,
                     payload.net_quantity,
                     int(payload.quantity_unit.value),
@@ -649,14 +687,18 @@ class GroceryRepository:
             """
             SELECT rowid FROM variants
             WHERE product_id = ?
-              AND label = ?
+              AND COALESCE(brand, '') = COALESCE(?, '')
+              AND COALESCE(flavor, '') = COALESCE(?, '')
+              AND COALESCE(packaging_style, '') = COALESCE(?, '')
               AND pack_count = ?
               AND net_quantity = ?
               AND quantity_unit = ?
             """,
             (
                 product_id,
-                payload.variant_label,
+                normalized_brand,
+                normalized_flavor,
+                self._packaging_style_to_db(payload.packaging_style),
                 payload.pack_count,
                 payload.net_quantity,
                 int(payload.quantity_unit.value),
@@ -666,11 +708,15 @@ class GroceryRepository:
             connection.execute(
                 """
                 UPDATE variants
-                SET upc = ?, is_variable_weight = ?, updated_at = ?
+                SET upc = ?, label = ?, brand = ?, flavor = ?, packaging_style = ?, is_variable_weight = ?, updated_at = ?
                 WHERE rowid = ?
                 """,
                 (
                     payload.upc,
+                    normalized_label,
+                    normalized_brand,
+                    normalized_flavor,
+                    self._packaging_style_to_db(payload.packaging_style),
                     int(payload.is_variable_weight),
                     self._utc_now_iso(),
                     natural_key_row["rowid"],
@@ -683,17 +729,23 @@ class GroceryRepository:
             INSERT INTO variants(
                 product_id,
                 label,
+                brand,
+                flavor,
+                packaging_style,
                 pack_count,
                 net_quantity,
                 quantity_unit,
                 is_variable_weight,
                 upc,
                 updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 product_id,
-                payload.variant_label,
+                normalized_label,
+                normalized_brand,
+                normalized_flavor,
+                self._packaging_style_to_db(payload.packaging_style),
                 payload.pack_count,
                 payload.net_quantity,
                 int(payload.quantity_unit.value),
@@ -736,6 +788,9 @@ class GroceryRepository:
                 updated_at=row["product_updated_at"],
             ),
             label=row["label"],
+            brand=row["brand"],
+            flavor=row["flavor"],
+            packaging_style=self._packaging_style_from_db(row["packaging_style"]),
             pack_count=row["pack_count"],
             net_quantity=row["net_quantity"],
             quantity_unit=ProductUnit(row["quantity_unit"]),
@@ -780,6 +835,45 @@ class GroceryRepository:
         if not normalized:
             raise ValueError("Product name is required")
         return normalized
+
+    def _normalize_descriptor(self, raw: Optional[str]) -> Optional[str]:
+        if raw is None:
+            return None
+        normalized = raw.strip().lower()
+        return normalized or None
+
+    def _build_variant_label(
+        self,
+        brand: Optional[str],
+        flavor: Optional[str],
+        packaging_style: Optional[PackagingStyle],
+        fallback: str,
+    ) -> str:
+        parts = [part for part in [brand, flavor, self._packaging_style_to_display(packaging_style)] if part]
+        if parts:
+            return " ".join(dict.fromkeys(parts))
+        normalized_fallback = fallback.strip().lower()
+        if not normalized_fallback:
+            raise ValueError("Variant details are required")
+        return normalized_fallback
+
+    def _packaging_style_to_db(self, packaging_style: Optional[PackagingStyle]) -> Optional[str]:
+        if packaging_style in (None, PackagingStyle.UNSPECIFIED):
+            return None
+        return packaging_style.name.lower()
+
+    def _packaging_style_from_db(self, raw: Optional[str]) -> Optional[PackagingStyle]:
+        if raw is None:
+            return None
+        normalized = raw.strip().upper()
+        if not normalized:
+            return None
+        return PackagingStyle[normalized]
+
+    def _packaging_style_to_display(self, packaging_style: Optional[PackagingStyle]) -> Optional[str]:
+        if packaging_style in (None, PackagingStyle.UNSPECIFIED):
+            return None
+        return packaging_style.name.lower()
 
     def _utc_now_iso(self) -> str:
         return dt.datetime.now(dt.timezone.utc).isoformat(timespec="microseconds")

@@ -2,6 +2,7 @@ package com.example.grocerystoreorganizer.ui.additem
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.grocerystoreorganizer.data.local.entity.PackagingStyle
 import com.example.grocerystoreorganizer.data.local.entity.ProductUnit
 import com.example.grocerystoreorganizer.data.local.repository.CameraRepository
 import com.example.grocerystoreorganizer.data.local.repository.CameraResult
@@ -11,6 +12,7 @@ import com.example.grocerystoreorganizer.data.local.repository.ParsedPriceTagRes
 import com.example.grocerystoreorganizer.data.local.repository.PriceObservationCrudRepository
 import com.example.grocerystoreorganizer.data.local.repository.PriceObservationDto
 import com.example.grocerystoreorganizer.data.local.repository.SaleDto
+import com.example.grocerystoreorganizer.data.local.repository.buildVariantLabel
 import com.example.grocerystoreorganizer.data.remote.repository.PriceObservationConflictException
 import com.example.grocerystoreorganizer.ui.state.AddItemUiState
 import com.example.grocerystoreorganizer.ui.state.LocationUiState
@@ -22,16 +24,44 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import android.net.Uri
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.OffsetDateTime
+import java.time.ZoneId
 
 class AddGroceryItemViewModel(
     private val groceryRepo: PriceObservationCrudRepository,
     private val locationRepo: LocationRepository,
     private val cameraRepo: CameraRepository,
     private val locationRequired: Boolean = false,
+    prefill: PriceObservationPrefill? = null,
 ) : ViewModel() {
     private val _state = MutableStateFlow(AddItemUiState(observedAt = nowIsoTimestamp()))
     val state: StateFlow<AddItemUiState> = _state
     private var pendingPhotoUri: String? = null
+
+    init {
+        if (prefill != null) {
+            update { current ->
+                current.copy(
+                    productName = sanitizeProductNamePrefill(prefill.productName),
+                    productCategory = prefill.productCategory.orEmpty(),
+                    brand = prefill.brand.orEmpty(),
+                    flavor = prefill.flavor.orEmpty(),
+                    packagingStyle = prefill.packagingStyle,
+                    variantLabel = buildVariantLabel(prefill.brand, prefill.flavor, prefill.packagingStyle, prefill.variantLabel),
+                    itemUPC = prefill.upc.orEmpty(),
+                    upcResolved = true,
+                    requiresProductVariantDetails = true,
+                    packCount = prefill.packCount?.toString() ?: current.packCount,
+                    netQuantity = prefill.netQuantity?.toString() ?: current.netQuantity,
+                    quantityUnit = prefill.quantityUnit ?: current.quantityUnit,
+                    isVariableWeight = prefill.isVariableWeight,
+                    upcLookupMessage = "Prefilled from optimized grocery item. Review and submit.",
+                )
+            }
+        }
+    }
 
     fun onStoreNameChange(v: String) = update { it.copy(storeName = v, generalError = null, savedId = null, upcConflictMessage = null) }
     fun onStoreAddressChange(v: String) = update {
@@ -47,29 +77,59 @@ class AddGroceryItemViewModel(
         it.copy(productName = v, productError = null, generalError = null, savedId = null, upcConflictMessage = null)
     }
     fun onProductCategoryChange(v: String) = update { it.copy(productCategory = v, generalError = null, savedId = null, upcConflictMessage = null) }
-    fun onVariantLabelChange(v: String) = update {
-        it.copy(variantLabel = v, variantError = null, generalError = null, savedId = null, upcConflictMessage = null)
+    fun onBrandChange(v: String) = update {
+        it.copy(brand = v, variantError = null, generalError = null, savedId = null, upcConflictMessage = null)
+    }
+    fun onFlavorChange(v: String) = update {
+        it.copy(flavor = v, variantError = null, generalError = null, savedId = null, upcConflictMessage = null)
+    }
+    fun onPackagingStyleChange(v: PackagingStyle?) = update {
+        it.copy(packagingStyle = v, variantError = null, generalError = null, savedId = null, upcConflictMessage = null)
     }
     fun onUPCChange(v: String) = update {
         val normalized = v.filter { ch -> ch.isDigit() }
-        it.copy(
-            itemUPC = normalized,
-            upcError = null,
-            generalError = null,
-            savedId = null,
-            upcConflictMessage = null,
-            upcResolved = false,
-            isResolvingUpc = false,
-            requiresProductVariantDetails = false,
-            upcLookupMessage = null,
-            productName = "",
-            productCategory = "",
-            variantLabel = "",
-            packCount = "1",
-            netQuantity = "",
-            quantityUnit = ProductUnit.EA,
-            isVariableWeight = false,
-        )
+        if (it.requiresProductVariantDetails) {
+            it.copy(
+                itemUPC = normalized,
+                upcError = null,
+                generalError = null,
+                savedId = null,
+                upcConflictMessage = null,
+                isResolvingUpc = false,
+                upcLookupMessage = if (normalized.isBlank()) {
+                    if (it.allowMissingUpcForVariableWeight || it.isVariableWeight) {
+                        "No UPC provided. Continue entering product and variant details."
+                    } else {
+                        null
+                    }
+                } else {
+                    "UPC changed. Existing product details were preserved; review and continue."
+                },
+            )
+        } else {
+            it.copy(
+                itemUPC = normalized,
+                upcError = null,
+                generalError = null,
+                savedId = null,
+                upcConflictMessage = null,
+                upcResolved = false,
+                isResolvingUpc = false,
+                allowMissingUpcForVariableWeight = false,
+                requiresProductVariantDetails = false,
+                upcLookupMessage = null,
+                productName = "",
+                productCategory = "",
+                variantLabel = "",
+                brand = "",
+                flavor = "",
+                packagingStyle = null,
+                packCount = "1",
+                netQuantity = "",
+                quantityUnit = ProductUnit.EA,
+                isVariableWeight = false,
+            )
+        }
     }
     fun onPackCountChange(v: String) = update {
         it.copy(packCount = v, packCountError = null, generalError = null, savedId = null, upcConflictMessage = null)
@@ -92,13 +152,85 @@ class AddGroceryItemViewModel(
             generalError = null,
             savedId = null,
             upcConflictMessage = null,
-            saleStartDate = if (v && it.saleStartDate.isBlank()) it.observedAt else it.saleStartDate,
+            saleStartDate = if (v && it.saleStartDate.isBlank()) currentDateOnly() else it.saleStartDate,
+            saleStartIncludesTime = if (v) it.saleStartIncludesTime else false,
+            saleExpirationIncludesTime = if (v) it.saleExpirationIncludesTime else false,
         )
     }
     fun onSaleStartDateChange(v: String) = update {
         it.copy(saleStartDate = v, saleStartDateError = null, generalError = null, savedId = null, upcConflictMessage = null)
     }
     fun onSaleExpirationDateChange(v: String) = update { it.copy(saleExpirationDate = v, generalError = null, savedId = null, upcConflictMessage = null) }
+    fun onSaleStartIncludesTimeChange(v: Boolean) = update {
+        it.copy(
+            saleStartIncludesTime = v,
+            saleStartDate = rewriteDateTimeValue(it.saleStartDate, v),
+            generalError = null,
+            savedId = null,
+            upcConflictMessage = null,
+        )
+    }
+    fun onSaleExpirationIncludesTimeChange(v: Boolean) = update {
+        it.copy(
+            saleExpirationIncludesTime = v,
+            saleExpirationDate = rewriteDateTimeValue(it.saleExpirationDate, v),
+            generalError = null,
+            savedId = null,
+            upcConflictMessage = null,
+        )
+    }
+    fun onSaleStartDatePicked(date: LocalDate) = update {
+        val currentDateTime = parseDateTime(it.saleStartDate)
+        val nextValue = if (it.saleStartIncludesTime) {
+            formatDateTime(date.atTime(currentDateTime?.toLocalTime() ?: DEFAULT_TIME))
+        } else {
+            formatDateOnly(date)
+        }
+        it.copy(
+            saleStartDate = nextValue,
+            saleStartDateError = null,
+            generalError = null,
+            savedId = null,
+            upcConflictMessage = null,
+        )
+    }
+    fun onSaleExpirationDatePicked(date: LocalDate) = update {
+        val currentDateTime = parseDateTime(it.saleExpirationDate)
+        val nextValue = if (it.saleExpirationIncludesTime) {
+            formatDateTime(date.atTime(currentDateTime?.toLocalTime() ?: DEFAULT_TIME))
+        } else {
+            formatDateOnly(date)
+        }
+        it.copy(
+            saleExpirationDate = nextValue,
+            generalError = null,
+            savedId = null,
+            upcConflictMessage = null,
+        )
+    }
+    fun onSaleStartTimePicked(hour: Int, minute: Int) = update {
+        val baseDate = parseDateTime(it.saleStartDate)?.toLocalDate()
+            ?: parseDateOnly(it.saleStartDate)
+            ?: LocalDate.now()
+        it.copy(
+            saleStartDate = formatDateTime(baseDate.atTime(hour, minute)),
+            saleStartDateError = null,
+            generalError = null,
+            savedId = null,
+            upcConflictMessage = null,
+        )
+    }
+    fun onSaleExpirationTimePicked(hour: Int, minute: Int) = update {
+        val baseDate = parseDateTime(it.saleExpirationDate)?.toLocalDate()
+            ?: parseDateOnly(it.saleExpirationDate)
+            ?: LocalDate.now()
+        it.copy(
+            saleExpirationDate = formatDateTime(baseDate.atTime(hour, minute)),
+            generalError = null,
+            savedId = null,
+            upcConflictMessage = null,
+        )
+    }
     fun onSaleMinimumQuantityChange(v: String) = update { it.copy(saleMinimumQuantity = v, generalError = null, savedId = null, upcConflictMessage = null) }
     fun onSaleLimitQuantityChange(v: String) = update { it.copy(saleLimitQuantity = v, generalError = null, savedId = null, upcConflictMessage = null) }
 
@@ -147,6 +279,10 @@ class AddGroceryItemViewModel(
         update { it.copy(photo = PhotoUiState.Idle, isParsingPhoto = false) }
     }
 
+    fun onPhotoUpcPresentChange(value: Boolean) = update {
+        it.copy(photoUpcPresent = value)
+    }
+
     fun parseCapturedPhoto() = viewModelScope.launch {
         val s = _state.value
         val photoState = s.photo as? PhotoUiState.Ready ?: run {
@@ -188,6 +324,17 @@ class AddGroceryItemViewModel(
     fun resolveUpc() = viewModelScope.launch {
         val s = _state.value
         if (s.isResolvingUpc) return@launch
+        if (s.allowMissingUpcForVariableWeight && s.itemUPC.isBlank()) {
+            update {
+                it.copy(
+                    upcResolved = true,
+                    requiresProductVariantDetails = true,
+                    upcError = null,
+                    upcLookupMessage = "No UPC provided. Continue for variable-weight item and enter details manually.",
+                )
+            }
+            return@launch
+        }
         val upc = normalizeUpc(s.itemUPC) ?: run {
             update { it.copy(upcError = "Enter a valid barcode (digits only, at least 4 digits)") }
             return@launch
@@ -229,6 +376,9 @@ class AddGroceryItemViewModel(
                             productName = known.productName,
                             productCategory = known.productCategory.orEmpty(),
                             variantLabel = known.variantLabel,
+                            brand = known.brand.orEmpty(),
+                            flavor = known.flavor.orEmpty(),
+                            packagingStyle = known.packagingStyle,
                             packCount = known.packCount.toString(),
                             netQuantity = known.netQuantity.toString(),
                             quantityUnit = known.quantityUnit,
@@ -309,13 +459,22 @@ class AddGroceryItemViewModel(
             return@launch
         }
 
-        val upc = normalizeUpc(s.itemUPC) ?: run {
+        val upc = normalizeUpc(s.itemUPC)
+        val allowMissingUpcNow = s.allowMissingUpcForVariableWeight && s.isVariableWeight && s.itemUPC.isBlank()
+        if (upc == null && !allowMissingUpcNow) {
             update { it.copy(upcError = "Enter a valid barcode (digits only, at least 4 digits)") }
             return@launch
         }
 
         val productName = s.productName.trim()
-        val variantLabel = s.variantLabel.trim()
+        val brand = normalizeDescriptor(s.brand)
+        val flavor = normalizeDescriptor(s.flavor)
+        val variantLabel = buildVariantLabel(
+            brand = brand,
+            flavor = flavor,
+            packagingStyle = s.packagingStyle,
+            fallback = s.variantLabel,
+        ).trim()
         val packCount = parseInt(s.packCount)
         val netQuantity = parseDouble(s.netQuantity)
 
@@ -325,7 +484,7 @@ class AddGroceryItemViewModel(
                 return@launch
             }
             if (variantLabel.isEmpty()) {
-                update { it.copy(variantError = "Variant label is required") }
+                update { it.copy(variantError = "Enter at least one of brand, flavor, or packaging style") }
                 return@launch
             }
             if (packCount == null) {
@@ -396,7 +555,10 @@ class AddGroceryItemViewModel(
             productName = productName,
             productCategory = s.productCategory.trim().ifBlank { null },
             variantLabel = variantLabel,
-            upc = upc,
+            brand = brand,
+            flavor = flavor,
+            packagingStyle = s.packagingStyle,
+            upc = upc ?: "",
             packCount = packCount,
             netQuantity = netQuantity,
             quantityUnit = s.quantityUnit,
@@ -416,6 +578,7 @@ class AddGroceryItemViewModel(
             },
             trainingImageJpeg = extractTrainingImageBytes(s.photo),
             trainingImageFilename = extractTrainingImageFilename(s.photo),
+            trainingImageUpcPresent = if (s.photo is PhotoUiState.Ready) s.photoUpcPresent else null,
         )
 
         update { it.copy(isSaving = true, generalError = null, savedId = null, upcConflictMessage = null, observedAt = observedAt) }
@@ -436,12 +599,16 @@ class AddGroceryItemViewModel(
                             isSaving = false,
                             upcConflictMessage = "This product already exists on the server. Please enter the UPC again and retry.",
                             upcResolved = false,
+                            allowMissingUpcForVariableWeight = false,
                             requiresProductVariantDetails = false,
                             upcLookupMessage = null,
                             itemUPC = "",
                             productName = "",
                             productCategory = "",
                             variantLabel = "",
+                            brand = "",
+                            flavor = "",
+                            packagingStyle = null,
                             packCount = "1",
                             netQuantity = "",
                             quantityUnit = ProductUnit.EA,
@@ -471,6 +638,19 @@ class AddGroceryItemViewModel(
         requestPhotoCapture()
     }
 
+    fun continueWithoutUpcForVariableWeight() {
+        update {
+            it.copy(
+                allowMissingUpcForVariableWeight = true,
+                upcResolved = true,
+                requiresProductVariantDetails = true,
+                isVariableWeight = true,
+                upcError = null,
+                upcLookupMessage = "No UPC available. Continue with variable-weight details and submit.",
+            )
+        }
+    }
+
     fun clearSavedFlag() {
         if (_state.value.savedId != null) update { it.copy(savedId = null) }
     }
@@ -480,6 +660,11 @@ class AddGroceryItemViewModel(
     }
 
     private suspend fun applyParsedPhotoResult(parsed: ParsedPriceTagResult) {
+        val hasStructuredPricing = parsed.priceTotal != null &&
+            parsed.netQuantity != null &&
+            parsed.quantityUnit != null &&
+            (parsed.packCount != null || parsed.isVariableWeight)
+
         update {
             it.copy(
                 isParsingPhoto = false,
@@ -488,21 +673,25 @@ class AddGroceryItemViewModel(
                 netQuantity = parsed.netQuantity?.toString() ?: it.netQuantity,
                 quantityUnit = parsed.quantityUnit ?: it.quantityUnit,
                 isVariableWeight = parsed.isVariableWeight,
+                photoUpcPresent = parsed.upcParsable,
             )
         }
 
         val messages = mutableListOf<String>()
         var allowRetry = false
 
-        if (parsed.ambiguous) {
+        val effectiveAmbiguous = parsed.ambiguous && !hasStructuredPricing
+        val effectiveUnparsable = parsed.unparsable && !hasStructuredPricing
+
+        if (effectiveAmbiguous) {
             messages += "This image looks ambiguous. Please take a clearer picture or continue with manual entry."
             allowRetry = true
         }
-        if (parsed.unparsable) {
+        if (effectiveUnparsable) {
             messages += "The image appears unclear or unusable. You can continue with manual entry."
             allowRetry = true
         }
-        if (!parsed.upcParsable) {
+        if (!parsed.upcParsable && !(hasStructuredPricing && parsed.isVariableWeight)) {
             messages += "UPC could not be parsed from the image. Enter the UPC manually to continue."
         }
         parsed.message?.takeIf { it.isNotBlank() }?.let(messages::add)
@@ -511,6 +700,16 @@ class AddGroceryItemViewModel(
         if (parsedUpc != null) {
             update { it.copy(itemUPC = parsedUpc, upcError = null) }
             resolveUpcInternal(parsedUpc)
+        } else if (hasStructuredPricing && parsed.isVariableWeight) {
+            update {
+                it.copy(
+                    allowMissingUpcForVariableWeight = true,
+                    upcResolved = true,
+                    requiresProductVariantDetails = true,
+                    upcLookupMessage = "No UPC parsed. Continuing in variable-weight mode without UPC.",
+                )
+            }
+            messages += "No UPC was parsed, but pricing was extracted. You can continue without UPC for this variable-weight item."
         }
 
         if (messages.isNotEmpty()) {
@@ -555,4 +754,47 @@ class AddGroceryItemViewModel(
 
     private fun nowIsoTimestamp(): String =
         SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US).format(Date())
+
+    private fun currentDateOnly(): String = formatDateOnly(LocalDate.now())
+
+    private fun rewriteDateTimeValue(current: String, includesTime: Boolean): String {
+        if (current.isBlank()) {
+            return if (includesTime) formatDateTime(LocalDate.now().atTime(DEFAULT_TIME)) else currentDateOnly()
+        }
+        val asDateTime = parseDateTime(current)
+        val asDate = asDateTime?.toLocalDate() ?: parseDateOnly(current) ?: LocalDate.now()
+        return if (includesTime) {
+            formatDateTime(asDate.atTime(asDateTime?.toLocalTime() ?: DEFAULT_TIME))
+        } else {
+            formatDateOnly(asDate)
+        }
+    }
+
+    private fun parseDateOnly(value: String): LocalDate? =
+        runCatching { LocalDate.parse(value.trim()) }.getOrNull()
+
+    private fun parseDateTime(value: String): LocalDateTime? {
+        val trimmed = value.trim()
+        return runCatching { LocalDateTime.parse(trimmed) }.getOrNull()
+            ?: runCatching { OffsetDateTime.parse(trimmed).atZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime() }.getOrNull()
+    }
+
+    private fun formatDateOnly(date: LocalDate): String = date.toString()
+
+    private fun formatDateTime(dateTime: LocalDateTime): String = dateTime.toString()
+
+    private fun sanitizeProductNamePrefill(value: String): String {
+        val normalized = value.trim()
+        if (normalized.isEmpty()) return ""
+        if (normalized.equals("no product information available", ignoreCase = true)) return ""
+        if (normalized.equals("unknown product", ignoreCase = true)) return ""
+        return normalized
+    }
+
+    private fun normalizeDescriptor(value: String): String? =
+        value.trim().lowercase().ifBlank { null }
+
+    private companion object {
+        val DEFAULT_TIME = java.time.LocalTime.of(12, 0)
+    }
 }

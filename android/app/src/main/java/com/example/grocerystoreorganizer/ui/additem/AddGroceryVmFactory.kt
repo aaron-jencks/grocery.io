@@ -13,7 +13,10 @@ import com.example.grocerystoreorganizer.data.remote.repository.GrpcPriceObserva
 import com.example.grocerystoreorganizer.data.local.source.CameraDataSource
 import com.example.grocerystoreorganizer.data.local.source.LocationDataSource
 
-class AddGroceryVmFactory(private val context: Context) : ViewModelProvider.Factory  {
+class AddGroceryVmFactory(
+    private val context: Context,
+    private val prefill: PriceObservationPrefill? = null,
+) : ViewModelProvider.Factory  {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         val groceryRepo: PriceObservationCrudRepository =
             if (BuildConfig.USE_REMOTE_DB) {
@@ -42,6 +45,7 @@ class AddGroceryVmFactory(private val context: Context) : ViewModelProvider.Fact
             locationRepo = locationRepo,
             cameraRepo = cameraRepo,
             locationRequired = true,
+            prefill = prefill,
         ) as T
     }
 }

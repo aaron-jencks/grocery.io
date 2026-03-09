@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
+import com.example.grocerystoreorganizer.data.local.entity.PackagingStyle
 import com.example.grocerystoreorganizer.data.local.entity.ProductUnit
 import com.example.grocerystoreorganizer.data.local.entity.ProductVariant
 
@@ -30,12 +31,19 @@ interface ProductVariantDao {
 
     @Query(
         "select * from variants " +
-            "where productId = :productId and label = :label and packCount = :packCount " +
+            "where productId = :productId and label = :label and " +
+            "coalesce(brand, '') = coalesce(:brand, '') and " +
+            "coalesce(flavor, '') = coalesce(:flavor, '') and " +
+            "coalesce(packagingStyle, '') = coalesce(:packagingStyle, '') and " +
+            "packCount = :packCount " +
             "and netQuantity = :netQuantity and quantityUnit = :quantityUnit limit 1"
     )
     suspend fun FindByNaturalKey(
         productId: Int,
         label: String,
+        brand: String?,
+        flavor: String?,
+        packagingStyle: PackagingStyle?,
         packCount: Int,
         netQuantity: Double,
         quantityUnit: ProductUnit,

@@ -1,5 +1,6 @@
 package com.example.grocerystoreorganizer.ui.state
 
+import com.example.grocerystoreorganizer.data.local.entity.PackagingStyle
 import com.example.grocerystoreorganizer.data.local.entity.ProductUnit
 
 data class AddItemUiState(
@@ -10,10 +11,14 @@ data class AddItemUiState(
     val productName: String = "",
     val productCategory: String = "",
     val variantLabel: String = "",
+    val brand: String = "",
+    val flavor: String = "",
+    val packagingStyle: PackagingStyle? = null,
     val itemUPC: String = "",
     val upcResolved: Boolean = false,
     val requiresProductVariantDetails: Boolean = false,
     val isResolvingUpc: Boolean = false,
+    val allowMissingUpcForVariableWeight: Boolean = false,
     val upcLookupMessage: String? = null,
     val packCount: String = "1",
     val netQuantity: String = "",
@@ -23,12 +28,15 @@ data class AddItemUiState(
     val observedAt: String = "",
     val isSale: Boolean = false,
     val saleStartDate: String = "",
+    val saleStartIncludesTime: Boolean = false,
     val saleExpirationDate: String = "",
+    val saleExpirationIncludesTime: Boolean = false,
     val saleMinimumQuantity: String = "",
     val saleLimitQuantity: String = "",
 
     val location: LocationUiState = LocationUiState.Idle,
     val photo: PhotoUiState = PhotoUiState.Idle,
+    val photoUpcPresent: Boolean = true,
     val isParsingPhoto: Boolean = false,
     val parseDialogMessage: String? = null,
     val parseDialogAllowRetry: Boolean = false,

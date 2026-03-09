@@ -28,7 +28,7 @@ import com.example.grocerystoreorganizer.data.local.entity.Store
         GroceryListItem::class,
         LocalGroceryListEntry::class,
     ],
-    version = 8
+    version = 9
 )
 @TypeConverters(LocalTypeConverters::class)
 abstract class LocalDatabase : RoomDatabase() {

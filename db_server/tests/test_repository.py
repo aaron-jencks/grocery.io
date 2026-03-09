@@ -47,7 +47,7 @@ class GroceryRepositoryTest(unittest.TestCase):
         self.assertIsNotNone(variant)
         assert variant is not None
         self.assertEqual(variant.product.name, "milk")
-        self.assertEqual(variant.label, "Whole")
+        self.assertEqual(variant.label, "whole")
 
         observation = self.repository.get_price_observation(observation_id)
         self.assertIsNotNone(observation)
@@ -99,7 +99,7 @@ class GroceryRepositoryTest(unittest.TestCase):
         variant = self.repository.resolve_upc("123456")
         self.assertIsNotNone(variant)
         assert variant is not None
-        self.assertEqual(variant.label, "Whole Updated")
+        self.assertEqual(variant.label, "whole updated")
         self.assertEqual(variant.pack_count, 2)
         self.assertTrue(variant.is_variable_weight)
 

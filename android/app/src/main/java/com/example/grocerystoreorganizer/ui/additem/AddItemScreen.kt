@@ -1,6 +1,8 @@
 package com.example.grocerystoreorganizer.ui.additem
 
 import android.Manifest
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -47,15 +50,22 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.grocerystoreorganizer.data.local.entity.PackagingStyle
 import com.example.grocerystoreorganizer.data.local.entity.ProductUnit
+import com.example.grocerystoreorganizer.data.local.repository.buildVariantLabel
 import com.example.grocerystoreorganizer.ui.state.LocationUiState
 import com.example.grocerystoreorganizer.ui.state.PhotoUiState
+import java.time.LocalDate
+import java.time.LocalDateTime
 
 @Composable
-fun AddItemScreen() {
+fun AddItemScreen(
+    prefill: PriceObservationPrefill? = null,
+    onObservationSaved: (() -> Unit)? = null,
+) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
-    val vm: AddGroceryItemViewModel = viewModel(factory = AddGroceryVmFactory(context))
+    val vm: AddGroceryItemViewModel = viewModel(factory = AddGroceryVmFactory(context, prefill))
     val state by vm.state.collectAsState()
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
@@ -82,6 +92,12 @@ fun AddItemScreen() {
                 takePictureLauncher.launch(Uri.parse(photoState.outputUri))
             }
             else -> Unit
+        }
+    }
+    LaunchedEffect(state.savedId) {
+        if (state.savedId != null && onObservationSaved != null) {
+            onObservationSaved()
+            vm.clearSavedFlag()
         }
     }
 
@@ -166,6 +182,11 @@ fun AddItemScreen() {
                         TextButton(onClick = vm::resolveUpc) { Text("Re-check") }
                     }
                 }
+                if (!state.upcResolved) {
+                    TextButton(onClick = vm::continueWithoutUpcForVariableWeight) {
+                        Text("No UPC (variable weight)")
+                    }
+                }
                 state.upcLookupMessage?.let {
                     Text(
                         it,
@@ -216,12 +237,35 @@ fun AddItemScreen() {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Step 2: Variant", style = MaterialTheme.typography.titleMedium)
                     OutlinedTextField(
-                        value = state.variantLabel,
-                        onValueChange = vm::onVariantLabelChange,
-                        label = { Text("Variant label*") },
-                        isError = state.variantError != null,
+                        value = state.brand,
+                        onValueChange = vm::onBrandChange,
+                        label = { Text("Brand (optional)") },
                         modifier = Modifier.fillMaxWidth()
                     )
+                    OutlinedTextField(
+                        value = state.flavor,
+                        onValueChange = vm::onFlavorChange,
+                        label = { Text("Flavor (optional)") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    PackagingStyleDropdown(
+                        label = "Packaging style (optional)",
+                        selected = state.packagingStyle,
+                        onSelected = vm::onPackagingStyleChange,
+                    )
+                    val derivedVariantLabel = buildVariantLabel(
+                        brand = state.brand,
+                        flavor = state.flavor,
+                        packagingStyle = state.packagingStyle,
+                        fallback = state.variantLabel,
+                    )
+                    if (derivedVariantLabel.isNotBlank()) {
+                        Text(
+                            text = "Variant preview: $derivedVariantLabel",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     state.variantError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Column(modifier = Modifier.weight(1f)) {
@@ -274,7 +318,7 @@ fun AddItemScreen() {
                     if (state.productCategory.isNotBlank()) {
                         Text("Category: ${state.productCategory}")
                     }
-                    Text("Variant: ${state.variantLabel}")
+                    Text("Variant: ${buildVariantLabel(state.brand, state.flavor, state.packagingStyle, state.variantLabel)}")
                     Text("Pack: ${state.packCount}")
                     Text("Net quantity: ${state.netQuantity} ${state.quantityUnit.display}")
                     Text("Variable weight: ${if (state.isVariableWeight) "Yes" else "No"}")
@@ -391,6 +435,15 @@ fun AddItemScreen() {
                     is PhotoUiState.Ready -> Text("Photo saved: ${p.outputUri}")
                     is PhotoUiState.Error -> Text(p.message, color = MaterialTheme.colorScheme.error)
                 }
+                if (state.photo is PhotoUiState.Ready) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = state.photoUpcPresent,
+                            onCheckedChange = vm::onPhotoUpcPresentChange,
+                        )
+                        Text("UPC is visible in photo")
+                    }
+                }
                 if (state.isParsingPhoto) {
                     Text("Extracting fields from photo...")
                 }
@@ -404,19 +457,24 @@ fun AddItemScreen() {
                     Text("Sale price")
                 }
                 if (state.isSale) {
-                    OutlinedTextField(
+                    DateTimePickerField(
+                        label = "Sale start date*",
                         value = state.saleStartDate,
-                        onValueChange = vm::onSaleStartDateChange,
-                        label = { Text("Sale start date (ISO-8601)*") },
-                        isError = state.saleStartDateError != null,
-                        modifier = Modifier.fillMaxWidth()
+                        includesTime = state.saleStartIncludesTime,
+                        onIncludesTimeChange = vm::onSaleStartIncludesTimeChange,
+                        onDatePicked = vm::onSaleStartDatePicked,
+                        onTimePicked = vm::onSaleStartTimePicked,
+                        modifier = Modifier.fillMaxWidth(),
                     )
                     state.saleStartDateError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                    OutlinedTextField(
+                    DateTimePickerField(
+                        label = "Sale expiration date (optional)",
                         value = state.saleExpirationDate,
-                        onValueChange = vm::onSaleExpirationDateChange,
-                        label = { Text("Sale expiration date (optional)") },
-                        modifier = Modifier.fillMaxWidth()
+                        includesTime = state.saleExpirationIncludesTime,
+                        onIncludesTimeChange = vm::onSaleExpirationIncludesTimeChange,
+                        onDatePicked = vm::onSaleExpirationDatePicked,
+                        onTimePicked = vm::onSaleExpirationTimePicked,
+                        modifier = Modifier.fillMaxWidth(),
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
@@ -537,3 +595,120 @@ private fun ProductUnitDropdown(
         }
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PackagingStyleDropdown(
+    label: String,
+    selected: PackagingStyle?,
+    onSelected: (PackagingStyle?) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded },
+    ) {
+        OutlinedTextField(
+            value = selected?.display ?: "",
+            onValueChange = {},
+            readOnly = true,
+            label = { Text(label) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier
+                .menuAnchor()
+                .fillMaxWidth()
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            DropdownMenuItem(
+                text = { Text("None") },
+                onClick = {
+                    onSelected(null)
+                    expanded = false
+                }
+            )
+            PackagingStyle.entries.forEach { value ->
+                DropdownMenuItem(
+                    text = { Text(value.display) },
+                    onClick = {
+                        onSelected(value)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DateTimePickerField(
+    label: String,
+    value: String,
+    includesTime: Boolean,
+    onIncludesTimeChange: (Boolean) -> Unit,
+    onDatePicked: (LocalDate) -> Unit,
+    onTimePicked: (Int, Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    val parsedDate = remember(value) { parseDisplayDate(value) ?: LocalDate.now() }
+    val parsedTime = remember(value) { parseDisplayTime(value) ?: LocalDateTime.now().toLocalTime().withSecond(0).withNano(0) }
+
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text(label) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable {
+                    DatePickerDialog(
+                        context,
+                        { _, year, month, dayOfMonth ->
+                            onDatePicked(LocalDate.of(year, month + 1, dayOfMonth))
+                        },
+                        parsedDate.year,
+                        parsedDate.monthValue - 1,
+                        parsedDate.dayOfMonth,
+                    ).show()
+                },
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Checkbox(
+                checked = includesTime,
+                onCheckedChange = onIncludesTimeChange,
+            )
+            Text("Include time")
+            if (includesTime) {
+                TextButton(
+                    onClick = {
+                        TimePickerDialog(
+                            context,
+                            { _, hourOfDay, minute -> onTimePicked(hourOfDay, minute) },
+                            parsedTime.hour,
+                            parsedTime.minute,
+                            false,
+                        ).show()
+                    },
+                ) {
+                    Text("Set time")
+                }
+            }
+        }
+    }
+}
+
+private fun parseDisplayDate(value: String): LocalDate? {
+    val trimmed = value.trim()
+    if (trimmed.isEmpty()) return null
+    return runCatching { LocalDate.parse(trimmed.take(10)) }.getOrNull()
+}
+
+private fun parseDisplayTime(value: String) =
+    runCatching { LocalDateTime.parse(value.trim()).toLocalTime() }.getOrNull()

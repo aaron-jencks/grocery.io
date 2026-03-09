@@ -27,6 +27,18 @@ class ComparisonMode(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
     CHEAPEST_PRICE: _ClassVar[ComparisonMode]
     BEST_UNIT_VALUE: _ClassVar[ComparisonMode]
+
+class PackagingStyle(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    PACKAGING_UNSPECIFIED: _ClassVar[PackagingStyle]
+    LOOSE: _ClassVar[PackagingStyle]
+    CAN: _ClassVar[PackagingStyle]
+    BOTTLE: _ClassVar[PackagingStyle]
+    BOX: _ClassVar[PackagingStyle]
+    BAG: _ClassVar[PackagingStyle]
+    CARTON: _ClassVar[PackagingStyle]
+    BUNCH: _ClassVar[PackagingStyle]
+    OTHER: _ClassVar[PackagingStyle]
 OZ: ProductUnit
 LB: ProductUnit
 EA: ProductUnit
@@ -42,6 +54,15 @@ TSP: ProductUnit
 TBSP: ProductUnit
 CHEAPEST_PRICE: ComparisonMode
 BEST_UNIT_VALUE: ComparisonMode
+PACKAGING_UNSPECIFIED: PackagingStyle
+LOOSE: PackagingStyle
+CAN: PackagingStyle
+BOTTLE: PackagingStyle
+BOX: PackagingStyle
+BAG: PackagingStyle
+CARTON: PackagingStyle
+BUNCH: PackagingStyle
+OTHER: PackagingStyle
 
 class UpcRequest(_message.Message):
     __slots__ = ("upc",)
@@ -50,7 +71,7 @@ class UpcRequest(_message.Message):
     def __init__(self, upc: _Optional[str] = ...) -> None: ...
 
 class UpcInfo(_message.Message):
-    __slots__ = ("upc", "productName", "productCategory", "variantLabel", "packCount", "netQuantity", "quantityUnit", "isVariableWeight", "updatedAt")
+    __slots__ = ("upc", "productName", "productCategory", "variantLabel", "packCount", "netQuantity", "quantityUnit", "isVariableWeight", "updatedAt", "brand", "flavor", "packagingStyle")
     UPC_FIELD_NUMBER: _ClassVar[int]
     PRODUCTNAME_FIELD_NUMBER: _ClassVar[int]
     PRODUCTCATEGORY_FIELD_NUMBER: _ClassVar[int]
@@ -60,6 +81,9 @@ class UpcInfo(_message.Message):
     QUANTITYUNIT_FIELD_NUMBER: _ClassVar[int]
     ISVARIABLEWEIGHT_FIELD_NUMBER: _ClassVar[int]
     UPDATEDAT_FIELD_NUMBER: _ClassVar[int]
+    BRAND_FIELD_NUMBER: _ClassVar[int]
+    FLAVOR_FIELD_NUMBER: _ClassVar[int]
+    PACKAGINGSTYLE_FIELD_NUMBER: _ClassVar[int]
     upc: str
     productName: str
     productCategory: str
@@ -69,7 +93,10 @@ class UpcInfo(_message.Message):
     quantityUnit: ProductUnit
     isVariableWeight: bool
     updatedAt: str
-    def __init__(self, upc: _Optional[str] = ..., productName: _Optional[str] = ..., productCategory: _Optional[str] = ..., variantLabel: _Optional[str] = ..., packCount: _Optional[int] = ..., netQuantity: _Optional[float] = ..., quantityUnit: _Optional[_Union[ProductUnit, str]] = ..., isVariableWeight: bool = ..., updatedAt: _Optional[str] = ...) -> None: ...
+    brand: str
+    flavor: str
+    packagingStyle: PackagingStyle
+    def __init__(self, upc: _Optional[str] = ..., productName: _Optional[str] = ..., productCategory: _Optional[str] = ..., variantLabel: _Optional[str] = ..., packCount: _Optional[int] = ..., netQuantity: _Optional[float] = ..., quantityUnit: _Optional[_Union[ProductUnit, str]] = ..., isVariableWeight: bool = ..., updatedAt: _Optional[str] = ..., brand: _Optional[str] = ..., flavor: _Optional[str] = ..., packagingStyle: _Optional[_Union[PackagingStyle, str]] = ...) -> None: ...
 
 class UpcResponse(_message.Message):
     __slots__ = ("found", "info")
@@ -152,7 +179,7 @@ class SaleInfo(_message.Message):
     def __init__(self, startDate: _Optional[str] = ..., expirationDate: _Optional[str] = ..., minimumQuantity: _Optional[int] = ..., limitQuantity: _Optional[int] = ...) -> None: ...
 
 class PriceObservationRequest(_message.Message):
-    __slots__ = ("store", "upc", "priceTotal", "observedAt", "isSale", "saleInfo", "trainingImageJpeg", "trainingImageFilename")
+    __slots__ = ("store", "upc", "priceTotal", "observedAt", "isSale", "saleInfo", "trainingImageJpeg", "trainingImageFilename", "trainingImageUpcPresent")
     STORE_FIELD_NUMBER: _ClassVar[int]
     UPC_FIELD_NUMBER: _ClassVar[int]
     PRICETOTAL_FIELD_NUMBER: _ClassVar[int]
@@ -161,6 +188,7 @@ class PriceObservationRequest(_message.Message):
     SALEINFO_FIELD_NUMBER: _ClassVar[int]
     TRAININGIMAGEJPEG_FIELD_NUMBER: _ClassVar[int]
     TRAININGIMAGEFILENAME_FIELD_NUMBER: _ClassVar[int]
+    TRAININGIMAGEUPCPRESENT_FIELD_NUMBER: _ClassVar[int]
     store: StoreInfo
     upc: UpcInfo
     priceTotal: float
@@ -169,7 +197,8 @@ class PriceObservationRequest(_message.Message):
     saleInfo: SaleInfo
     trainingImageJpeg: bytes
     trainingImageFilename: str
-    def __init__(self, store: _Optional[_Union[StoreInfo, _Mapping]] = ..., upc: _Optional[_Union[UpcInfo, _Mapping]] = ..., priceTotal: _Optional[float] = ..., observedAt: _Optional[str] = ..., isSale: bool = ..., saleInfo: _Optional[_Union[SaleInfo, _Mapping]] = ..., trainingImageJpeg: _Optional[bytes] = ..., trainingImageFilename: _Optional[str] = ...) -> None: ...
+    trainingImageUpcPresent: bool
+    def __init__(self, store: _Optional[_Union[StoreInfo, _Mapping]] = ..., upc: _Optional[_Union[UpcInfo, _Mapping]] = ..., priceTotal: _Optional[float] = ..., observedAt: _Optional[str] = ..., isSale: bool = ..., saleInfo: _Optional[_Union[SaleInfo, _Mapping]] = ..., trainingImageJpeg: _Optional[bytes] = ..., trainingImageFilename: _Optional[str] = ..., trainingImageUpcPresent: bool = ...) -> None: ...
 
 class PriceObservationResponse(_message.Message):
     __slots__ = ("observationId",)
@@ -242,20 +271,26 @@ class OptimizedStore(_message.Message):
     def __init__(self, storeId: _Optional[int] = ..., storeName: _Optional[str] = ..., storeAddress: _Optional[str] = ..., location: _Optional[_Union[Coordinate, _Mapping]] = ...) -> None: ...
 
 class OptimizedVariant(_message.Message):
-    __slots__ = ("upc", "productName", "variantLabel", "packCount", "netQuantity", "quantityUnit")
+    __slots__ = ("upc", "productName", "variantLabel", "packCount", "netQuantity", "quantityUnit", "brand", "flavor", "packagingStyle")
     UPC_FIELD_NUMBER: _ClassVar[int]
     PRODUCTNAME_FIELD_NUMBER: _ClassVar[int]
     VARIANTLABEL_FIELD_NUMBER: _ClassVar[int]
     PACKCOUNT_FIELD_NUMBER: _ClassVar[int]
     NETQUANTITY_FIELD_NUMBER: _ClassVar[int]
     QUANTITYUNIT_FIELD_NUMBER: _ClassVar[int]
+    BRAND_FIELD_NUMBER: _ClassVar[int]
+    FLAVOR_FIELD_NUMBER: _ClassVar[int]
+    PACKAGINGSTYLE_FIELD_NUMBER: _ClassVar[int]
     upc: str
     productName: str
     variantLabel: str
     packCount: int
     netQuantity: float
     quantityUnit: ProductUnit
-    def __init__(self, upc: _Optional[str] = ..., productName: _Optional[str] = ..., variantLabel: _Optional[str] = ..., packCount: _Optional[int] = ..., netQuantity: _Optional[float] = ..., quantityUnit: _Optional[_Union[ProductUnit, str]] = ...) -> None: ...
+    brand: str
+    flavor: str
+    packagingStyle: PackagingStyle
+    def __init__(self, upc: _Optional[str] = ..., productName: _Optional[str] = ..., variantLabel: _Optional[str] = ..., packCount: _Optional[int] = ..., netQuantity: _Optional[float] = ..., quantityUnit: _Optional[_Union[ProductUnit, str]] = ..., brand: _Optional[str] = ..., flavor: _Optional[str] = ..., packagingStyle: _Optional[_Union[PackagingStyle, str]] = ...) -> None: ...
 
 class OptimizedItemMatch(_message.Message):
     __slots__ = ("itemId", "comparisonMode", "desiredCount", "store", "variant", "priceObservationId", "observedPriceTotal", "observedAt", "estimatedTotalPrice")

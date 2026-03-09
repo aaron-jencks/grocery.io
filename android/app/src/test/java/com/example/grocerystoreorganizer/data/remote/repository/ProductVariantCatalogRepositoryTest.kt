@@ -1,6 +1,7 @@
 package com.example.grocerystoreorganizer.data.remote.repository
 
 import com.example.grocerystoreorganizer.data.local.dao.ProductVariantDao
+import com.example.grocerystoreorganizer.data.local.entity.PackagingStyle
 import com.example.grocerystoreorganizer.data.local.entity.Product
 import com.example.grocerystoreorganizer.data.local.entity.ProductUnit
 import com.example.grocerystoreorganizer.data.local.entity.ProductVariant
@@ -120,6 +121,9 @@ private class FakeProductVariantDao(
     override suspend fun FindByNaturalKey(
         productId: Int,
         label: String,
+        brand: String?,
+        flavor: String?,
+        packagingStyle: PackagingStyle?,
         packCount: Int,
         netQuantity: Double,
         quantityUnit: ProductUnit,
@@ -127,6 +131,9 @@ private class FakeProductVariantDao(
         items.firstOrNull {
             it.productId == productId &&
                 it.label == label &&
+                it.brand == brand &&
+                it.flavor == flavor &&
+                it.packagingStyle == packagingStyle &&
                 it.packCount == packCount &&
                 it.netQuantity == netQuantity &&
                 it.quantityUnit == quantityUnit

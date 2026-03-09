@@ -1,6 +1,7 @@
 package com.example.grocerystoreorganizer.data.remote.repository
 
 import com.example.grocerystoreorganizer.data.local.entity.Comparison
+import com.example.grocerystoreorganizer.data.local.entity.PackagingStyle
 import com.example.grocerystoreorganizer.data.local.entity.ProductUnit
 
 data class ShoppingOptimizationItemRequest(
@@ -21,6 +22,9 @@ data class ShoppingOptimizationMatch(
     val variantUpc: String,
     val variantProductName: String,
     val variantLabel: String,
+    val variantBrand: String?,
+    val variantFlavor: String?,
+    val variantPackagingStyle: PackagingStyle?,
     val variantPackCount: Int,
     val variantNetQuantity: Double,
     val variantQuantityUnit: ProductUnit,

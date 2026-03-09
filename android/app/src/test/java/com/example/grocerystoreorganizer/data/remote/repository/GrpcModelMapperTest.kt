@@ -42,6 +42,7 @@ class GrpcModelMapperTest {
                     minimumQuantity = 1,
                     limitQuantity = 2,
                 ),
+                trainingImageUpcPresent = false,
             )
         )
 
@@ -50,6 +51,8 @@ class GrpcModelMapperTest {
         assertEquals(4.99, request.priceTotal, 0.0)
         assertTrue(request.hasSaleInfo())
         assertEquals(2, request.saleInfo.limitQuantity)
+        assertTrue(request.hasTrainingImageUpcPresent())
+        assertEquals(false, request.trainingImageUpcPresent)
     }
 
     @Test

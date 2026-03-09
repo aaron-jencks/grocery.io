@@ -2,15 +2,18 @@ package com.example.grocerystoreorganizer.data.remote.repository
 
 import com.example.grocerystoreorganizer.data.local.entity.ProductUnit
 import com.example.grocerystoreorganizer.data.local.entity.Comparison
+import com.example.grocerystoreorganizer.data.local.entity.PackagingStyle
 import com.example.grocerystoreorganizer.data.local.repository.KnownUpcVariant
 import com.example.grocerystoreorganizer.data.local.repository.ParsedPriceTagResult
 import com.example.grocerystoreorganizer.data.local.repository.PriceObservationDto
+import com.example.grocerystoreorganizer.data.local.repository.buildVariantLabel
 import com.example.grocerystoreorganizer.grpc.ComparisonMode
 import com.example.grocerystoreorganizer.grpc.Coordinate
 import com.example.grocerystoreorganizer.grpc.GroceryListOptimizationItem
 import com.example.grocerystoreorganizer.grpc.OptimizeGroceryListRequest
 import com.example.grocerystoreorganizer.grpc.OptimizeGroceryListResponse
 import com.example.grocerystoreorganizer.grpc.ParsePriceTagImageResponse
+import com.example.grocerystoreorganizer.grpc.PackagingStyle as GrpcPackagingStyle
 import com.example.grocerystoreorganizer.grpc.PriceObservationRequest
 import com.example.grocerystoreorganizer.grpc.ProductUnit as GrpcProductUnit
 import com.example.grocerystoreorganizer.grpc.SaleInfo
@@ -24,7 +27,15 @@ internal object GrpcModelMapper {
             upc = info.upc,
             productName = info.productName,
             productCategory = if (info.hasProductCategory()) info.productCategory else null,
-            variantLabel = info.variantLabel,
+            variantLabel = buildVariantLabel(
+                brand = if (info.hasBrand()) info.brand else null,
+                flavor = if (info.hasFlavor()) info.flavor else null,
+                packagingStyle = if (info.hasPackagingStyle()) toLocalPackagingStyle(info.packagingStyle) else null,
+                fallback = info.variantLabel,
+            ),
+            brand = if (info.hasBrand()) info.brand else null,
+            flavor = if (info.hasFlavor()) info.flavor else null,
+            packagingStyle = if (info.hasPackagingStyle()) toLocalPackagingStyle(info.packagingStyle) else null,
             packCount = info.packCount,
             netQuantity = info.netQuantity,
             quantityUnit = toLocalUnit(info.quantityUnit),
@@ -41,6 +52,9 @@ internal object GrpcModelMapper {
             .setQuantityUnit(toGrpcUnit(input.quantityUnit))
             .setIsVariableWeight(input.isVariableWeight)
         input.productCategory?.let(upcBuilder::setProductCategory)
+        input.brand?.let(upcBuilder::setBrand)
+        input.flavor?.let(upcBuilder::setFlavor)
+        input.packagingStyle?.let { upcBuilder.packagingStyle = toGrpcPackagingStyle(it) }
 
         val storeBuilder = StoreInfo.newBuilder()
             .setStoreAddress(input.storeAddress)
@@ -73,6 +87,7 @@ internal object GrpcModelMapper {
             requestBuilder.trainingImageJpeg = ByteString.copyFrom(jpeg)
         }
         input.trainingImageFilename?.let(requestBuilder::setTrainingImageFilename)
+        input.trainingImageUpcPresent?.let(requestBuilder::setTrainingImageUpcPresent)
 
         return requestBuilder.build()
     }
@@ -109,6 +124,9 @@ internal object GrpcModelMapper {
                     variantUpc = match.variant.upc,
                     variantProductName = match.variant.productName,
                     variantLabel = match.variant.variantLabel,
+                    variantBrand = if (match.variant.hasBrand()) match.variant.brand else null,
+                    variantFlavor = if (match.variant.hasFlavor()) match.variant.flavor else null,
+                    variantPackagingStyle = if (match.variant.hasPackagingStyle()) toLocalPackagingStyle(match.variant.packagingStyle) else null,
                     variantPackCount = match.variant.packCount,
                     variantNetQuantity = match.variant.netQuantity,
                     variantQuantityUnit = toLocalUnit(match.variant.quantityUnit),
@@ -185,5 +203,30 @@ internal object GrpcModelMapper {
             GrpcProductUnit.TBSP -> ProductUnit.TBSP
             GrpcProductUnit.ITEM -> ProductUnit.EA
             else -> ProductUnit.EA
+        }
+
+    private fun toGrpcPackagingStyle(value: PackagingStyle): GrpcPackagingStyle =
+        when (value) {
+            PackagingStyle.LOOSE -> GrpcPackagingStyle.LOOSE
+            PackagingStyle.CAN -> GrpcPackagingStyle.CAN
+            PackagingStyle.BOTTLE -> GrpcPackagingStyle.BOTTLE
+            PackagingStyle.BOX -> GrpcPackagingStyle.BOX
+            PackagingStyle.BAG -> GrpcPackagingStyle.BAG
+            PackagingStyle.CARTON -> GrpcPackagingStyle.CARTON
+            PackagingStyle.BUNCH -> GrpcPackagingStyle.BUNCH
+            PackagingStyle.OTHER -> GrpcPackagingStyle.OTHER
+        }
+
+    private fun toLocalPackagingStyle(value: GrpcPackagingStyle): PackagingStyle? =
+        when (value) {
+            GrpcPackagingStyle.LOOSE -> PackagingStyle.LOOSE
+            GrpcPackagingStyle.CAN -> PackagingStyle.CAN
+            GrpcPackagingStyle.BOTTLE -> PackagingStyle.BOTTLE
+            GrpcPackagingStyle.BOX -> PackagingStyle.BOX
+            GrpcPackagingStyle.BAG -> PackagingStyle.BAG
+            GrpcPackagingStyle.CARTON -> PackagingStyle.CARTON
+            GrpcPackagingStyle.BUNCH -> PackagingStyle.BUNCH
+            GrpcPackagingStyle.OTHER -> PackagingStyle.OTHER
+            else -> null
         }
 }

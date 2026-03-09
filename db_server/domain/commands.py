@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from db_server.domain.upc import ProductUnit
+from db_server.domain.upc import PackagingStyle, ProductUnit
 
 
 @dataclass
@@ -30,3 +30,6 @@ class PriceObservationInput:
     observed_at: str
     is_sale: bool
     sale: Optional[SaleInput] = None
+    brand: Optional[str] = None
+    flavor: Optional[str] = None
+    packaging_style: Optional[PackagingStyle] = None

@@ -18,6 +18,18 @@ class ProductUnit(Enum):
     TBSP = 11
 
 
+class PackagingStyle(Enum):
+    UNSPECIFIED = 0
+    LOOSE = 1
+    CAN = 2
+    BOTTLE = 3
+    BOX = 4
+    BAG = 5
+    CARTON = 6
+    BUNCH = 7
+    OTHER = 8
+
+
 @dataclass
 class Product:
     rowid: int
@@ -31,6 +43,9 @@ class ProductVariant:
     rowid: int
     product: Product
     label: str
+    brand: Optional[str]
+    flavor: Optional[str]
+    packaging_style: Optional[PackagingStyle]
     pack_count: int
     net_quantity: float
     quantity_unit: ProductUnit

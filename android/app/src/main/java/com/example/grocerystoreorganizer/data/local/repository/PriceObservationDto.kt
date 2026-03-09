@@ -1,5 +1,6 @@
 package com.example.grocerystoreorganizer.data.local.repository
 
+import com.example.grocerystoreorganizer.data.local.entity.PackagingStyle
 import com.example.grocerystoreorganizer.data.local.entity.ProductUnit
 
 data class PriceObservationDto(
@@ -10,6 +11,9 @@ data class PriceObservationDto(
     val productName: String,
     val productCategory: String? = null,
     val variantLabel: String,
+    val brand: String? = null,
+    val flavor: String? = null,
+    val packagingStyle: PackagingStyle? = null,
     val upc: String,
     val packCount: Int = 1,
     val netQuantity: Double,
@@ -21,6 +25,7 @@ data class PriceObservationDto(
     val sale: SaleDto? = null,
     val trainingImageJpeg: ByteArray? = null,
     val trainingImageFilename: String? = null,
+    val trainingImageUpcPresent: Boolean? = null,
 )
 
 data class SaleDto(

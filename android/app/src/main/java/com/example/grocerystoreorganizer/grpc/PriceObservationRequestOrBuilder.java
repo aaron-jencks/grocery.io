@@ -91,4 +91,15 @@ public interface PriceObservationRequestOrBuilder extends
    */
   com.google.protobuf.ByteString
       getTrainingImageFilenameBytes();
+
+  /**
+   * <code>optional bool trainingImageUpcPresent = 9;</code>
+   * @return Whether the trainingImageUpcPresent field is set.
+   */
+  boolean hasTrainingImageUpcPresent();
+  /**
+   * <code>optional bool trainingImageUpcPresent = 9;</code>
+   * @return The trainingImageUpcPresent.
+   */
+  boolean getTrainingImageUpcPresent();
 }

@@ -107,11 +107,22 @@ class TorchCheckpointPriceTagParser:
         net_quantity = max(0.01, round(net_raw, 3))
         pack_count = None if variable_weight else max(1, int(round(pack_raw)))
         upc_parsable = False
+        has_complete_pricing = (
+            price_total is not None
+            and net_quantity is not None
+            and unit is not None
+            and (pack_count is not None or variable_weight)
+        )
+        if has_complete_pricing:
+            ambiguous = False
+            unparsable = False
         message = None
         if unparsable:
             message = "The model could not reliably parse this image."
         elif ambiguous:
             message = "The model parsed this image with low confidence. Please verify fields."
+        elif has_complete_pricing and not upc_parsable:
+            message = "Pricing parsed. UPC was not parsed, so enter UPC manually or continue without UPC for variable-weight items."
         elif upc_present:
             message = "UPC appears present, but this model cannot decode UPC digits yet. Enter UPC manually."
 

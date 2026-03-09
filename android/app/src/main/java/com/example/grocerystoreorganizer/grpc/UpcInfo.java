@@ -17,6 +17,8 @@ public  final class UpcInfo extends
     productCategory_ = "";
     variantLabel_ = "";
     updatedAt_ = "";
+    brand_ = "";
+    flavor_ = "";
   }
   private int bitField0_;
   public static final int UPC_FIELD_NUMBER = 1;
@@ -380,6 +382,166 @@ public  final class UpcInfo extends
     checkByteStringIsUtf8(value);
     updatedAt_ = value.toStringUtf8();
     
+  }
+
+  public static final int BRAND_FIELD_NUMBER = 10;
+  private java.lang.String brand_;
+  /**
+   * <code>optional string brand = 10;</code>
+   * @return Whether the brand field is set.
+   */
+  @java.lang.Override
+  public boolean hasBrand() {
+    return ((bitField0_ & 0x00000002) != 0);
+  }
+  /**
+   * <code>optional string brand = 10;</code>
+   * @return The brand.
+   */
+  @java.lang.Override
+  public java.lang.String getBrand() {
+    return brand_;
+  }
+  /**
+   * <code>optional string brand = 10;</code>
+   * @return The bytes for brand.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getBrandBytes() {
+    return com.google.protobuf.ByteString.copyFromUtf8(brand_);
+  }
+  /**
+   * <code>optional string brand = 10;</code>
+   * @param value The brand to set.
+   */
+  private void setBrand(
+      java.lang.String value) {
+    java.lang.Class<?> valueClass = value.getClass();
+  bitField0_ |= 0x00000002;
+    brand_ = value;
+  }
+  /**
+   * <code>optional string brand = 10;</code>
+   */
+  private void clearBrand() {
+    bitField0_ = (bitField0_ & ~0x00000002);
+    brand_ = getDefaultInstance().getBrand();
+  }
+  /**
+   * <code>optional string brand = 10;</code>
+   * @param value The bytes for brand to set.
+   */
+  private void setBrandBytes(
+      com.google.protobuf.ByteString value) {
+    checkByteStringIsUtf8(value);
+    brand_ = value.toStringUtf8();
+    bitField0_ |= 0x00000002;
+  }
+
+  public static final int FLAVOR_FIELD_NUMBER = 11;
+  private java.lang.String flavor_;
+  /**
+   * <code>optional string flavor = 11;</code>
+   * @return Whether the flavor field is set.
+   */
+  @java.lang.Override
+  public boolean hasFlavor() {
+    return ((bitField0_ & 0x00000004) != 0);
+  }
+  /**
+   * <code>optional string flavor = 11;</code>
+   * @return The flavor.
+   */
+  @java.lang.Override
+  public java.lang.String getFlavor() {
+    return flavor_;
+  }
+  /**
+   * <code>optional string flavor = 11;</code>
+   * @return The bytes for flavor.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getFlavorBytes() {
+    return com.google.protobuf.ByteString.copyFromUtf8(flavor_);
+  }
+  /**
+   * <code>optional string flavor = 11;</code>
+   * @param value The flavor to set.
+   */
+  private void setFlavor(
+      java.lang.String value) {
+    java.lang.Class<?> valueClass = value.getClass();
+  bitField0_ |= 0x00000004;
+    flavor_ = value;
+  }
+  /**
+   * <code>optional string flavor = 11;</code>
+   */
+  private void clearFlavor() {
+    bitField0_ = (bitField0_ & ~0x00000004);
+    flavor_ = getDefaultInstance().getFlavor();
+  }
+  /**
+   * <code>optional string flavor = 11;</code>
+   * @param value The bytes for flavor to set.
+   */
+  private void setFlavorBytes(
+      com.google.protobuf.ByteString value) {
+    checkByteStringIsUtf8(value);
+    flavor_ = value.toStringUtf8();
+    bitField0_ |= 0x00000004;
+  }
+
+  public static final int PACKAGINGSTYLE_FIELD_NUMBER = 12;
+  private int packagingStyle_;
+  /**
+   * <code>optional .grocery.database.PackagingStyle packagingStyle = 12;</code>
+   * @return Whether the packagingStyle field is set.
+   */
+  @java.lang.Override
+  public boolean hasPackagingStyle() {
+    return ((bitField0_ & 0x00000008) != 0);
+  }
+  /**
+   * <code>optional .grocery.database.PackagingStyle packagingStyle = 12;</code>
+   * @return The enum numeric value on the wire for packagingStyle.
+   */
+  @java.lang.Override
+  public int getPackagingStyleValue() {
+    return packagingStyle_;
+  }
+  /**
+   * <code>optional .grocery.database.PackagingStyle packagingStyle = 12;</code>
+   * @return The packagingStyle.
+   */
+  @java.lang.Override
+  public com.example.grocerystoreorganizer.grpc.PackagingStyle getPackagingStyle() {
+    com.example.grocerystoreorganizer.grpc.PackagingStyle result = com.example.grocerystoreorganizer.grpc.PackagingStyle.forNumber(packagingStyle_);
+    return result == null ? com.example.grocerystoreorganizer.grpc.PackagingStyle.UNRECOGNIZED : result;
+  }
+  /**
+   * <code>optional .grocery.database.PackagingStyle packagingStyle = 12;</code>
+   * @param value The enum numeric value on the wire for packagingStyle to set.
+   */
+  private void setPackagingStyleValue(int value) {
+    bitField0_ |= 0x00000008;  packagingStyle_ = value;
+  }
+  /**
+   * <code>optional .grocery.database.PackagingStyle packagingStyle = 12;</code>
+   * @param value The packagingStyle to set.
+   */
+  private void setPackagingStyle(com.example.grocerystoreorganizer.grpc.PackagingStyle value) {
+    packagingStyle_ = value.getNumber();
+    bitField0_ |= 0x00000008;
+  }
+  /**
+   * <code>optional .grocery.database.PackagingStyle packagingStyle = 12;</code>
+   */
+  private void clearPackagingStyle() {
+    bitField0_ = (bitField0_ & ~0x00000008);
+    packagingStyle_ = 0;
   }
 
   public static com.example.grocerystoreorganizer.grpc.UpcInfo parseFrom(
@@ -860,6 +1022,174 @@ public  final class UpcInfo extends
       return this;
     }
 
+    /**
+     * <code>optional string brand = 10;</code>
+     * @return Whether the brand field is set.
+     */
+    @java.lang.Override
+    public boolean hasBrand() {
+      return instance.hasBrand();
+    }
+    /**
+     * <code>optional string brand = 10;</code>
+     * @return The brand.
+     */
+    @java.lang.Override
+    public java.lang.String getBrand() {
+      return instance.getBrand();
+    }
+    /**
+     * <code>optional string brand = 10;</code>
+     * @return The bytes for brand.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getBrandBytes() {
+      return instance.getBrandBytes();
+    }
+    /**
+     * <code>optional string brand = 10;</code>
+     * @param value The brand to set.
+     * @return This builder for chaining.
+     */
+    public Builder setBrand(
+        java.lang.String value) {
+      copyOnWrite();
+      instance.setBrand(value);
+      return this;
+    }
+    /**
+     * <code>optional string brand = 10;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearBrand() {
+      copyOnWrite();
+      instance.clearBrand();
+      return this;
+    }
+    /**
+     * <code>optional string brand = 10;</code>
+     * @param value The bytes for brand to set.
+     * @return This builder for chaining.
+     */
+    public Builder setBrandBytes(
+        com.google.protobuf.ByteString value) {
+      copyOnWrite();
+      instance.setBrandBytes(value);
+      return this;
+    }
+
+    /**
+     * <code>optional string flavor = 11;</code>
+     * @return Whether the flavor field is set.
+     */
+    @java.lang.Override
+    public boolean hasFlavor() {
+      return instance.hasFlavor();
+    }
+    /**
+     * <code>optional string flavor = 11;</code>
+     * @return The flavor.
+     */
+    @java.lang.Override
+    public java.lang.String getFlavor() {
+      return instance.getFlavor();
+    }
+    /**
+     * <code>optional string flavor = 11;</code>
+     * @return The bytes for flavor.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getFlavorBytes() {
+      return instance.getFlavorBytes();
+    }
+    /**
+     * <code>optional string flavor = 11;</code>
+     * @param value The flavor to set.
+     * @return This builder for chaining.
+     */
+    public Builder setFlavor(
+        java.lang.String value) {
+      copyOnWrite();
+      instance.setFlavor(value);
+      return this;
+    }
+    /**
+     * <code>optional string flavor = 11;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearFlavor() {
+      copyOnWrite();
+      instance.clearFlavor();
+      return this;
+    }
+    /**
+     * <code>optional string flavor = 11;</code>
+     * @param value The bytes for flavor to set.
+     * @return This builder for chaining.
+     */
+    public Builder setFlavorBytes(
+        com.google.protobuf.ByteString value) {
+      copyOnWrite();
+      instance.setFlavorBytes(value);
+      return this;
+    }
+
+    /**
+     * <code>optional .grocery.database.PackagingStyle packagingStyle = 12;</code>
+     * @return Whether the packagingStyle field is set.
+     */
+    @java.lang.Override
+    public boolean hasPackagingStyle() {
+      return instance.hasPackagingStyle();
+    }
+    /**
+     * <code>optional .grocery.database.PackagingStyle packagingStyle = 12;</code>
+     * @return The enum numeric value on the wire for packagingStyle.
+     */
+    @java.lang.Override
+    public int getPackagingStyleValue() {
+      return instance.getPackagingStyleValue();
+    }
+    /**
+     * <code>optional .grocery.database.PackagingStyle packagingStyle = 12;</code>
+     * @param value The packagingStyle to set.
+     * @return This builder for chaining.
+     */
+    public Builder setPackagingStyleValue(int value) {
+      copyOnWrite();
+      instance.setPackagingStyleValue(value);
+      return this;
+    }
+    /**
+     * <code>optional .grocery.database.PackagingStyle packagingStyle = 12;</code>
+     * @return The packagingStyle.
+     */
+    @java.lang.Override
+    public com.example.grocerystoreorganizer.grpc.PackagingStyle getPackagingStyle() {
+      return instance.getPackagingStyle();
+    }
+    /**
+     * <code>optional .grocery.database.PackagingStyle packagingStyle = 12;</code>
+     * @param value The enum numeric value on the wire for packagingStyle to set.
+     * @return This builder for chaining.
+     */
+    public Builder setPackagingStyle(com.example.grocerystoreorganizer.grpc.PackagingStyle value) {
+      copyOnWrite();
+      instance.setPackagingStyle(value);
+      return this;
+    }
+    /**
+     * <code>optional .grocery.database.PackagingStyle packagingStyle = 12;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearPackagingStyle() {
+      copyOnWrite();
+      instance.clearPackagingStyle();
+      return this;
+    }
+
     // @@protoc_insertion_point(builder_scope:grocery.database.UpcInfo)
   }
   @java.lang.Override
@@ -886,10 +1216,14 @@ public  final class UpcInfo extends
             "quantityUnit_",
             "isVariableWeight_",
             "updatedAt_",
+            "brand_",
+            "flavor_",
+            "packagingStyle_",
           };
           java.lang.String info =
-              "\u0000\t\u0000\u0001\u0001\t\t\u0000\u0000\u0000\u0001\u0208\u0002\u0208\u0003\u1208" +
-              "\u0000\u0004\u0208\u0005\u0004\u0006\u0000\u0007\f\b\u0007\t\u0208";
+              "\u0000\f\u0000\u0001\u0001\f\f\u0000\u0000\u0000\u0001\u0208\u0002\u0208\u0003\u1208" +
+              "\u0000\u0004\u0208\u0005\u0004\u0006\u0000\u0007\f\b\u0007\t\u0208\n\u1208\u0001" +
+              "\u000b\u1208\u0002\f\u100c\u0003";
           return newMessageInfo(DEFAULT_INSTANCE, info, objects);
       }
       // fall through

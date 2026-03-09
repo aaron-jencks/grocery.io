@@ -5,11 +5,13 @@ import com.example.grocerystoreorganizer.data.local.dao.ProductDao
 import com.example.grocerystoreorganizer.data.local.dao.ProductVariantDao
 import com.example.grocerystoreorganizer.data.local.dao.SaleDao
 import com.example.grocerystoreorganizer.data.local.dao.StoreDao
+import com.example.grocerystoreorganizer.data.local.entity.PackagingStyle
 import com.example.grocerystoreorganizer.data.local.entity.PriceObservation
 import com.example.grocerystoreorganizer.data.local.entity.Product
 import com.example.grocerystoreorganizer.data.local.entity.ProductVariant
 import com.example.grocerystoreorganizer.data.local.entity.Sale
 import com.example.grocerystoreorganizer.data.local.entity.Store
+import com.example.grocerystoreorganizer.data.local.repository.buildVariantLabel
 
 class GroceryStoreRepository(
     private val priceDao: PriceObservationDao,
@@ -25,7 +27,10 @@ class GroceryStoreRepository(
             upc = variant.upc,
             productName = product.name,
             productCategory = product.category,
-            variantLabel = variant.label,
+            variantLabel = buildVariantLabel(variant.brand, variant.flavor, variant.packagingStyle, variant.label),
+            brand = variant.brand,
+            flavor = variant.flavor,
+            packagingStyle = variant.packagingStyle,
             packCount = variant.packCount,
             netQuantity = variant.netQuantity,
             quantityUnit = variant.quantityUnit,
@@ -150,6 +155,9 @@ class GroceryStoreRepository(
             }
             val updated = byUpc.copy(
                 label = input.variantLabel,
+                brand = normalizeDescriptor(input.brand),
+                flavor = normalizeDescriptor(input.flavor),
+                packagingStyle = input.packagingStyle,
                 packCount = input.packCount,
                 netQuantity = input.netQuantity,
                 quantityUnit = input.quantityUnit,
@@ -164,6 +172,9 @@ class GroceryStoreRepository(
         variantDao.FindByNaturalKey(
             productId = productId,
             label = input.variantLabel,
+            brand = normalizeDescriptor(input.brand),
+            flavor = normalizeDescriptor(input.flavor),
+            packagingStyle = input.packagingStyle,
             packCount = input.packCount,
             netQuantity = input.netQuantity,
             quantityUnit = input.quantityUnit,
@@ -176,6 +187,9 @@ class GroceryStoreRepository(
                 id = 0,
                 productId = productId,
                 label = input.variantLabel,
+                brand = normalizeDescriptor(input.brand),
+                flavor = normalizeDescriptor(input.flavor),
+                packagingStyle = input.packagingStyle,
                 packCount = input.packCount,
                 netQuantity = input.netQuantity,
                 quantityUnit = input.quantityUnit,
@@ -208,7 +222,7 @@ class GroceryStoreRepository(
     private fun validateInput(input: PriceObservationDto) {
         require(input.storeAddress.isNotBlank()) { "Store address is required" }
         require(input.productName.isNotBlank()) { "Product name is required" }
-        require(input.variantLabel.isNotBlank()) { "Variant label is required" }
+        require(input.variantLabel.isNotBlank()) { "Variant details are required" }
         require(input.upc.all { it.isDigit() }) { "UPC must contain only digits" }
         require(input.upc.length >= 4) { "UPC must be at least 4 digits" }
         require(input.packCount > 0) { "Pack count must be greater than zero" }
@@ -221,9 +235,13 @@ class GroceryStoreRepository(
         if (raw == null) return null
         val normalized = raw.split(';')
             .map { it.trim() }
+            .map { it.lowercase() }
             .filter { it.isNotEmpty() }
             .distinct()
             .joinToString("; ")
         return normalized.ifBlank { null }
     }
+
+    private fun normalizeDescriptor(raw: String?): String? =
+        raw?.trim()?.lowercase()?.ifBlank { null }
 }

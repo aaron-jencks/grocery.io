@@ -344,6 +344,40 @@ public  final class PriceObservationRequest extends
     bitField0_ |= 0x00000004;
   }
 
+  public static final int TRAININGIMAGEUPCPRESENT_FIELD_NUMBER = 9;
+  private boolean trainingImageUpcPresent_;
+  /**
+   * <code>optional bool trainingImageUpcPresent = 9;</code>
+   * @return Whether the trainingImageUpcPresent field is set.
+   */
+  @java.lang.Override
+  public boolean hasTrainingImageUpcPresent() {
+    return ((bitField0_ & 0x00000008) != 0);
+  }
+  /**
+   * <code>optional bool trainingImageUpcPresent = 9;</code>
+   * @return The trainingImageUpcPresent.
+   */
+  @java.lang.Override
+  public boolean getTrainingImageUpcPresent() {
+    return trainingImageUpcPresent_;
+  }
+  /**
+   * <code>optional bool trainingImageUpcPresent = 9;</code>
+   * @param value The trainingImageUpcPresent to set.
+   */
+  private void setTrainingImageUpcPresent(boolean value) {
+    bitField0_ |= 0x00000008;
+    trainingImageUpcPresent_ = value;
+  }
+  /**
+   * <code>optional bool trainingImageUpcPresent = 9;</code>
+   */
+  private void clearTrainingImageUpcPresent() {
+    bitField0_ = (bitField0_ & ~0x00000008);
+    trainingImageUpcPresent_ = false;
+  }
+
   public static com.example.grocerystoreorganizer.grpc.PriceObservationRequest parseFrom(
       java.nio.ByteBuffer data)
       throws com.google.protobuf.InvalidProtocolBufferException {
@@ -778,6 +812,42 @@ public  final class PriceObservationRequest extends
       return this;
     }
 
+    /**
+     * <code>optional bool trainingImageUpcPresent = 9;</code>
+     * @return Whether the trainingImageUpcPresent field is set.
+     */
+    @java.lang.Override
+    public boolean hasTrainingImageUpcPresent() {
+      return instance.hasTrainingImageUpcPresent();
+    }
+    /**
+     * <code>optional bool trainingImageUpcPresent = 9;</code>
+     * @return The trainingImageUpcPresent.
+     */
+    @java.lang.Override
+    public boolean getTrainingImageUpcPresent() {
+      return instance.getTrainingImageUpcPresent();
+    }
+    /**
+     * <code>optional bool trainingImageUpcPresent = 9;</code>
+     * @param value The trainingImageUpcPresent to set.
+     * @return This builder for chaining.
+     */
+    public Builder setTrainingImageUpcPresent(boolean value) {
+      copyOnWrite();
+      instance.setTrainingImageUpcPresent(value);
+      return this;
+    }
+    /**
+     * <code>optional bool trainingImageUpcPresent = 9;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearTrainingImageUpcPresent() {
+      copyOnWrite();
+      instance.clearTrainingImageUpcPresent();
+      return this;
+    }
+
     // @@protoc_insertion_point(builder_scope:grocery.database.PriceObservationRequest)
   }
   @java.lang.Override
@@ -803,10 +873,12 @@ public  final class PriceObservationRequest extends
             "saleInfo_",
             "trainingImageJpeg_",
             "trainingImageFilename_",
+            "trainingImageUpcPresent_",
           };
           java.lang.String info =
-              "\u0000\b\u0000\u0001\u0001\b\b\u0000\u0000\u0000\u0001\t\u0002\t\u0003\u0000\u0004" +
-              "\u0208\u0005\u0007\u0006\u1009\u0000\u0007\u100a\u0001\b\u1208\u0002";
+              "\u0000\t\u0000\u0001\u0001\t\t\u0000\u0000\u0000\u0001\t\u0002\t\u0003\u0000\u0004" +
+              "\u0208\u0005\u0007\u0006\u1009\u0000\u0007\u100a\u0001\b\u1208\u0002\t\u1007\u0003" +
+              "";
           return newMessageInfo(DEFAULT_INSTANCE, info, objects);
       }
       // fall through

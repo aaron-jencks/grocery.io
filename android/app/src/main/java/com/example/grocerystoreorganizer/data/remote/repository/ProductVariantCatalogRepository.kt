@@ -1,6 +1,7 @@
 package com.example.grocerystoreorganizer.data.remote.repository
 
 import com.example.grocerystoreorganizer.data.local.dao.ProductVariantDao
+import com.example.grocerystoreorganizer.data.local.entity.PackagingStyle
 import com.example.grocerystoreorganizer.data.local.entity.Product
 import com.example.grocerystoreorganizer.data.local.entity.ProductUnit
 import com.example.grocerystoreorganizer.data.local.entity.ProductVariant
@@ -36,6 +37,9 @@ class ProductVariantCatalogRepository(
                     existingByUpc.copy(
                         productId = product.id,
                         label = variant.variantLabel,
+                        brand = if (variant.hasBrand()) variant.brand else null,
+                        flavor = if (variant.hasFlavor()) variant.flavor else null,
+                        packagingStyle = if (variant.hasPackagingStyle()) toLocalPackagingStyle(variant.packagingStyle.number) else null,
                         packCount = variant.packCount,
                         netQuantity = variant.netQuantity,
                         quantityUnit = quantityUnit,
@@ -50,6 +54,9 @@ class ProductVariantCatalogRepository(
                         id = 0,
                         productId = product.id,
                         label = variant.variantLabel,
+                        brand = if (variant.hasBrand()) variant.brand else null,
+                        flavor = if (variant.hasFlavor()) variant.flavor else null,
+                        packagingStyle = if (variant.hasPackagingStyle()) toLocalPackagingStyle(variant.packagingStyle.number) else null,
                         packCount = variant.packCount,
                         netQuantity = variant.netQuantity,
                         quantityUnit = quantityUnit,
@@ -67,4 +74,17 @@ class ProductVariantCatalogRepository(
 
     private fun toLocalUnit(value: Int): ProductUnit =
         ProductUnit.entries.firstOrNull { it.ordinal == value } ?: ProductUnit.EA
+
+    private fun toLocalPackagingStyle(value: Int): PackagingStyle? =
+        when (value) {
+            1 -> PackagingStyle.LOOSE
+            2 -> PackagingStyle.CAN
+            3 -> PackagingStyle.BOTTLE
+            4 -> PackagingStyle.BOX
+            5 -> PackagingStyle.BAG
+            6 -> PackagingStyle.CARTON
+            7 -> PackagingStyle.BUNCH
+            8 -> PackagingStyle.OTHER
+            else -> null
+        }
 }

@@ -31,6 +31,18 @@ enum ComparisonMode {
   BEST_UNIT_VALUE = 1;
 }
 
+enum PackagingStyle {
+  PACKAGING_UNSPECIFIED = 0;
+  LOOSE = 1;
+  CAN = 2;
+  BOTTLE = 3;
+  BOX = 4;
+  BAG = 5;
+  CARTON = 6;
+  BUNCH = 7;
+  OTHER = 8;
+}
+
 message UpcInfo {
   string upc = 1;
   string productName = 2;
@@ -41,6 +53,9 @@ message UpcInfo {
   ProductUnit quantityUnit = 7;
   bool isVariableWeight = 8;
   string updatedAt = 9;
+  optional string brand = 10;
+  optional string flavor = 11;
+  optional PackagingStyle packagingStyle = 12;
 }
 
 message UpcResponse {
@@ -110,6 +125,7 @@ message PriceObservationRequest {
   optional SaleInfo saleInfo = 6;
   optional bytes trainingImageJpeg = 7;
   optional string trainingImageFilename = 8;
+  optional bool trainingImageUpcPresent = 9;
 }
 
 message PriceObservationResponse {
@@ -168,6 +184,9 @@ message OptimizedVariant {
   int32 packCount = 4;
   double netQuantity = 5;
   ProductUnit quantityUnit = 6;
+  optional string brand = 7;
+  optional string flavor = 8;
+  optional PackagingStyle packagingStyle = 9;
 }
 
 message OptimizedItemMatch {

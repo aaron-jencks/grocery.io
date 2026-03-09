@@ -399,6 +399,95 @@ class GroceryServicerTest(unittest.TestCase):
         image_filename = payload[0]["image_filename"]
         self.assertTrue((images_dir / image_filename).exists())
 
+    def test_training_image_upc_presence_flag_controls_dataset_label(self) -> None:
+        response = self.servicer.CreatePriceObservation(
+            db_service_pb2.PriceObservationRequest(
+                store=db_service_pb2.StoreInfo(
+                    storeAddress="123 Main St",
+                    location=db_service_pb2.Coordinate(latitude=1.0, longitude=2.0),
+                    storeName="Store A",
+                ),
+                upc=db_service_pb2.UpcInfo(
+                    upc="707070",
+                    productName="apples",
+                    variantLabel="bag",
+                    packCount=1,
+                    netQuantity=3.0,
+                    quantityUnit=db_service_pb2.LB,
+                    isVariableWeight=False,
+                ),
+                priceTotal=5.99,
+                observedAt="2026-03-03T10:00:00+00:00",
+                isSale=False,
+                trainingImageJpeg=b"fake-jpeg-bytes",
+                trainingImageFilename="capture.jpg",
+                trainingImageUpcPresent=False,
+            ),
+            self.context,
+        )
+        self.assertTrue(response.HasField("observationId"))
+        payload = json.loads((self.training_dir / "labels.json").read_text())
+        self.assertEqual(False, payload[-1]["upc_present"])
+        self.assertIsNone(payload[-1].get("upc_code"))
+
+    def test_variable_weight_without_upc_is_accepted_with_synthetic_upc(self) -> None:
+        response = self.servicer.CreatePriceObservation(
+            db_service_pb2.PriceObservationRequest(
+                store=db_service_pb2.StoreInfo(
+                    storeAddress="123 Main St",
+                    location=db_service_pb2.Coordinate(latitude=1.0, longitude=2.0),
+                    storeName="Store A",
+                ),
+                upc=db_service_pb2.UpcInfo(
+                    upc="",
+                    productName="ribeye",
+                    variantLabel="beef",
+                    packCount=1,
+                    netQuantity=1.0,
+                    quantityUnit=db_service_pb2.LB,
+                    isVariableWeight=True,
+                ),
+                priceTotal=13.99,
+                observedAt="2026-03-03T10:00:00+00:00",
+                isSale=False,
+            ),
+            self.context,
+        )
+
+        self.assertTrue(response.HasField("observationId"))
+        variants = self.servicer.ListVariantsForProduct(
+            db_service_pb2.ListVariantsForProductRequest(productName="ribeye"),
+            self.context,
+        ).variants
+        self.assertEqual(1, len(variants))
+        self.assertTrue(variants[0].upc.startswith("99"))
+        self.assertEqual(12, len(variants[0].upc))
+
+    def test_non_variable_weight_without_upc_is_rejected(self) -> None:
+        with self.assertRaises(RpcAbort) as raised:
+            self.servicer.CreatePriceObservation(
+                db_service_pb2.PriceObservationRequest(
+                    store=db_service_pb2.StoreInfo(
+                        storeAddress="123 Main St",
+                        location=db_service_pb2.Coordinate(latitude=1.0, longitude=2.0),
+                    ),
+                    upc=db_service_pb2.UpcInfo(
+                        upc="",
+                        productName="milk",
+                        variantLabel="whole",
+                        packCount=1,
+                        netQuantity=64.0,
+                        quantityUnit=db_service_pb2.OZ,
+                        isVariableWeight=False,
+                    ),
+                    priceTotal=4.99,
+                    observedAt="2026-03-03T10:00:00+00:00",
+                    isSale=False,
+                ),
+                self.context,
+            )
+        self.assertEqual(grpc.StatusCode.INVALID_ARGUMENT, raised.exception.code)
+
     def test_parse_price_tag_image_returns_parsed_fields(self) -> None:
         response = self.servicer.ParsePriceTagImage(
             db_service_pb2.ParsePriceTagImageRequest(

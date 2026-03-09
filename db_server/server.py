@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import json
 from concurrent import futures
 from pathlib import Path
@@ -13,7 +14,7 @@ from db_server import db_service_pb2
 from db_server import db_service_pb2_grpc
 from db_server.db.bootstrap import create_database
 from db_server.domain.commands import PriceObservationInput, SaleInput
-from db_server.domain.upc import ProductUnit, ProductVariant
+from db_server.domain.upc import PackagingStyle, ProductUnit, ProductVariant
 from db_server.parsing import ParsedPriceTag, PriceTagParser, create_default_price_tag_parser
 from db_server.repositories import GroceryRepository
 from db_server.repositories.grocery import ShoppingOptimizationInput
@@ -174,6 +175,12 @@ class GroceryServicer(
             entry.variant.upc = match.upc
             entry.variant.productName = match.product_name
             entry.variant.variantLabel = match.variant_label
+            if match.variant_brand is not None:
+                entry.variant.brand = match.variant_brand
+            if match.variant_flavor is not None:
+                entry.variant.flavor = match.variant_flavor
+            if match.variant_packaging_style is not None:
+                entry.variant.packagingStyle = self._to_proto_packaging_style(match.variant_packaging_style)
             entry.variant.packCount = match.pack_count
             entry.variant.netQuantity = match.net_quantity
             entry.variant.quantityUnit = int(match.quantity_unit.value)
@@ -198,6 +205,12 @@ class GroceryServicer(
         )
         if variant.product.category is not None:
             info.productCategory = variant.product.category
+        if variant.brand is not None:
+            info.brand = variant.brand
+        if variant.flavor is not None:
+            info.flavor = variant.flavor
+        if variant.packaging_style is not None:
+            info.packagingStyle = self._to_proto_packaging_style(variant.packaging_style)
         return info
 
     def _to_price_observation_input(
@@ -205,6 +218,16 @@ class GroceryServicer(
         request: db_service_pb2.PriceObservationRequest,
     ) -> PriceObservationInput:
         self._validate_request(request)
+        raw_upc = request.upc.upc.strip()
+        normalized_upc = raw_upc
+        if not raw_upc and request.upc.isVariableWeight:
+            normalized_upc = self._derive_synthetic_variable_weight_upc(
+                product_name=request.upc.productName.strip(),
+                variant_label=request.upc.variantLabel.strip(),
+                pack_count=request.upc.packCount,
+                net_quantity=request.upc.netQuantity,
+                quantity_unit=ProductUnit(request.upc.quantityUnit),
+            )
 
         sale = None
         if request.HasField("saleInfo"):
@@ -232,7 +255,7 @@ class GroceryServicer(
             store_latitude=request.store.location.latitude,
             store_longitude=request.store.location.longitude,
             store_name=request.store.storeName.strip() if request.store.HasField("storeName") else None,
-            upc=request.upc.upc.strip(),
+            upc=normalized_upc,
             product_name=request.upc.productName.strip(),
             product_category=(
                 request.upc.productCategory.strip()
@@ -240,6 +263,13 @@ class GroceryServicer(
                 else None
             ),
             variant_label=request.upc.variantLabel.strip(),
+            brand=request.upc.brand.strip() if request.upc.HasField("brand") else None,
+            flavor=request.upc.flavor.strip() if request.upc.HasField("flavor") else None,
+            packaging_style=(
+                self._from_proto_packaging_style(request.upc.packagingStyle)
+                if request.upc.HasField("packagingStyle")
+                else None
+            ),
             pack_count=request.upc.packCount,
             net_quantity=request.upc.netQuantity,
             quantity_unit=ProductUnit(request.upc.quantityUnit),
@@ -253,12 +283,22 @@ class GroceryServicer(
     def _validate_request(self, request: db_service_pb2.PriceObservationRequest) -> None:
         if not request.store.storeAddress.strip():
             raise ValueError("Store address is required")
-        if not request.upc.upc.strip().isdigit() or len(request.upc.upc.strip()) < 4:
+        upc = request.upc.upc.strip()
+        if upc:
+            if not upc.isdigit() or len(upc) < 4:
+                raise ValueError("UPC must contain only digits and be at least 4 digits")
+        elif not request.upc.isVariableWeight:
             raise ValueError("UPC must contain only digits and be at least 4 digits")
         if not request.upc.productName.strip():
             raise ValueError("Product name is required")
-        if not request.upc.variantLabel.strip():
-            raise ValueError("Variant label is required")
+        has_variant_details = (
+            request.upc.variantLabel.strip()
+            or (request.upc.HasField("brand") and request.upc.brand.strip())
+            or (request.upc.HasField("flavor") and request.upc.flavor.strip())
+            or request.upc.HasField("packagingStyle")
+        )
+        if not has_variant_details:
+            raise ValueError("Variant details are required")
         if request.upc.packCount <= 0:
             raise ValueError("Pack count must be greater than zero")
         if request.upc.netQuantity <= 0:
@@ -281,6 +321,54 @@ class GroceryServicer(
         if mode == "best_unit_value":
             return db_service_pb2.BEST_UNIT_VALUE
         return db_service_pb2.CHEAPEST_PRICE
+
+    def _derive_synthetic_variable_weight_upc(
+        self,
+        product_name: str,
+        variant_label: str,
+        pack_count: int,
+        net_quantity: float,
+        quantity_unit: ProductUnit,
+    ) -> str:
+        payload = "|".join(
+            [
+                product_name.lower(),
+                variant_label.lower(),
+                str(pack_count),
+                f"{net_quantity:.6f}",
+                quantity_unit.name,
+                "varwt",
+            ]
+        )
+        digest = hashlib.sha1(payload.encode("utf-8")).hexdigest()
+        numeric = int(digest[:12], 16) % 10_000_000_000
+        return f"99{numeric:010d}"
+
+    def _to_proto_packaging_style(self, value: PackagingStyle) -> int:
+        mapping = {
+            PackagingStyle.LOOSE: db_service_pb2.LOOSE,
+            PackagingStyle.CAN: db_service_pb2.CAN,
+            PackagingStyle.BOTTLE: db_service_pb2.BOTTLE,
+            PackagingStyle.BOX: db_service_pb2.BOX,
+            PackagingStyle.BAG: db_service_pb2.BAG,
+            PackagingStyle.CARTON: db_service_pb2.CARTON,
+            PackagingStyle.BUNCH: db_service_pb2.BUNCH,
+            PackagingStyle.OTHER: db_service_pb2.OTHER,
+        }
+        return mapping.get(value, db_service_pb2.PACKAGING_UNSPECIFIED)
+
+    def _from_proto_packaging_style(self, value: int) -> Optional[PackagingStyle]:
+        mapping = {
+            db_service_pb2.LOOSE: PackagingStyle.LOOSE,
+            db_service_pb2.CAN: PackagingStyle.CAN,
+            db_service_pb2.BOTTLE: PackagingStyle.BOTTLE,
+            db_service_pb2.BOX: PackagingStyle.BOX,
+            db_service_pb2.BAG: PackagingStyle.BAG,
+            db_service_pb2.CARTON: PackagingStyle.CARTON,
+            db_service_pb2.BUNCH: PackagingStyle.BUNCH,
+            db_service_pb2.OTHER: PackagingStyle.OTHER,
+        }
+        return mapping.get(value)
 
     def _to_parse_response(self, parsed: ParsedPriceTag) -> db_service_pb2.ParsePriceTagImageResponse:
         response = db_service_pb2.ParsePriceTagImageResponse(
@@ -340,6 +428,12 @@ class GroceryServicer(
         unit_name = db_service_pb2.ProductUnit.Name(request.upc.quantityUnit)
         if unit_name == "EA":
             unit_name = "ITEM"
+        provided_upc = request.upc.upc.strip()
+        upc_present = (
+            bool(request.trainingImageUpcPresent)
+            if request.HasField("trainingImageUpcPresent")
+            else bool(provided_upc)
+        )
 
         label_record = {
             "image_filename": generated_name,
@@ -351,8 +445,8 @@ class GroceryServicer(
             "net_quantity": float(request.upc.netQuantity),
             "quantity_unit": unit_name,
             "pack_count": None if request.upc.isVariableWeight else int(request.upc.packCount),
-            "upc_present": True,
-            "upc_code": request.upc.upc.strip(),
+            "upc_present": upc_present,
+            "upc_code": provided_upc if upc_present else None,
             "prefilled_by_model": False,
         }
         payload.append(label_record)

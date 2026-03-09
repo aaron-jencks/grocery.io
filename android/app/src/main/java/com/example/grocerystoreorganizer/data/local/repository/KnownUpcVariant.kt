@@ -1,5 +1,6 @@
 package com.example.grocerystoreorganizer.data.local.repository
 
+import com.example.grocerystoreorganizer.data.local.entity.PackagingStyle
 import com.example.grocerystoreorganizer.data.local.entity.ProductUnit
 
 data class KnownUpcVariant(
@@ -7,6 +8,9 @@ data class KnownUpcVariant(
     val productName: String,
     val productCategory: String?,
     val variantLabel: String,
+    val brand: String?,
+    val flavor: String?,
+    val packagingStyle: PackagingStyle?,
     val packCount: Int,
     val netQuantity: Double,
     val quantityUnit: ProductUnit,

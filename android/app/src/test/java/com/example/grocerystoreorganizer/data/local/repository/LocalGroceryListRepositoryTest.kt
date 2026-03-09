@@ -4,6 +4,7 @@ import com.example.grocerystoreorganizer.data.local.dao.LocalGroceryListEntryDao
 import com.example.grocerystoreorganizer.data.local.dao.ProductDao
 import com.example.grocerystoreorganizer.data.local.dao.ProductVariantDao
 import com.example.grocerystoreorganizer.data.local.entity.Comparison
+import com.example.grocerystoreorganizer.data.local.entity.PackagingStyle
 import com.example.grocerystoreorganizer.data.local.entity.LocalGroceryListEntry
 import com.example.grocerystoreorganizer.data.local.entity.Product
 import com.example.grocerystoreorganizer.data.local.entity.ProductUnit
@@ -222,6 +223,9 @@ private class FakeVariantDao : ProductVariantDao {
     override suspend fun FindByNaturalKey(
         productId: Int,
         label: String,
+        brand: String?,
+        flavor: String?,
+        packagingStyle: PackagingStyle?,
         packCount: Int,
         netQuantity: Double,
         quantityUnit: ProductUnit,
