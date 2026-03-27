@@ -51,12 +51,30 @@ python -m price_tag_ai.train --config configs/base.json --config run_configs/loc
 
 Later configs override earlier ones.
 
+For Hugging Face fine-tuning, use the separate entrypoint:
+
+```bash
+. .venv/bin/activate
+python -m price_tag_ai.train_hf --config configs/base.json --config run_configs/local.json
+```
+
+Notes:
+
+- `price_tag_ai.train` is the existing custom PyTorch training loop.
+- `price_tag_ai.train_hf` uses Hugging Face `Trainer` with a ViT backbone and the same manifests, labels, metrics, and train-time augmentations.
+- Set `model.pretrained=true` and `model.hf_model_name` to fine-tune from a pretrained checkpoint.
+- Augmentations are on-the-fly stochastic transforms, not dataset expansion. The train dataset size stays the same, but the sampled image variant changes across accesses and epochs.
+- Optional Weights & Biases logging is controlled by `wandb.enabled`. When enabled, set:
+  - `wandb.entity`
+  - `wandb.project`
+  - run name is automatically set to the current UTC timestamp
+
 Training pipeline behavior:
 
 - reads labels from `dataset.labels_path` (default `data/labels.json`)
 - excludes only `status in {"trashed","skipped"}` and uses flagged samples for ambiguity/unparsable supervision
 - deterministically generates train/val JSONL manifests (`dataset.train_manifest`, `dataset.val_manifest`) using `dataset.val_ratio`
-- trains a multitask ResNet model (price, unit, net quantity, pack count, variable-weight, ambiguous, unparsable) and saves timestamped checkpoints (for example `best-20260306T120000Z.pt`, `epoch-005-20260306T120000Z.pt`) plus `training_metrics.json` to `train.output_dir`
+- trains a multitask CNN with a shared encoder and task-specific heads. The current default baseline is a pretrained `mobilenet_v3_small` backbone with regression heads for numeric fields and classification/binary heads for unit and quality flags. Checkpoints are saved with timestamps (for example `best-20260306T120000Z.pt`, `epoch-005-20260306T120000Z.pt`) plus `training_metrics.json` to `train.output_dir`
 
 ## Labeling Tool
 

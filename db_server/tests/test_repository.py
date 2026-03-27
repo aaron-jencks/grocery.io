@@ -103,6 +103,7 @@ class GroceryRepositoryTest(unittest.TestCase):
         self.assertEqual(variant.pack_count, 2)
         self.assertTrue(variant.is_variable_weight)
 
+
     def test_sale_is_persisted(self) -> None:
         observation_id = self.repository.create_price_observation(
             PriceObservationInput(
@@ -110,6 +111,7 @@ class GroceryRepositoryTest(unittest.TestCase):
                 store_latitude=10.0,
                 store_longitude=20.0,
                 store_name="Store",
+                store_requires_paid_membership=True,
                 upc="654321",
                 product_name="Eggs",
                 product_category="Dairy",
@@ -126,6 +128,9 @@ class GroceryRepositoryTest(unittest.TestCase):
                     expiration_date="2026-03-05T00:00:00+00:00",
                     minimum_quantity=1,
                     limit_quantity=2,
+                    multiple_of=3,
+                    requires_paid_membership=True,
+                    requires_loyalty_card=True,
                 ),
             )
         )
@@ -136,6 +141,77 @@ class GroceryRepositoryTest(unittest.TestCase):
         self.assertIsNotNone(observation.sale)
         assert observation.sale is not None
         self.assertEqual(observation.sale.limit_quantity, 2)
+        self.assertEqual(observation.sale.multiple_of, 3)
+        self.assertTrue(observation.store.requires_paid_membership)
+        self.assertTrue(observation.sale.requires_paid_membership)
+        self.assertTrue(observation.sale.requires_loyalty_card)
+
+    def test_optimize_filters_paid_membership_and_loyalty_rows(self) -> None:
+        self.repository.create_price_observation(
+            PriceObservationInput(
+                store_address="123 Main St",
+                store_latitude=10.0,
+                store_longitude=20.0,
+                store_name="Members Store",
+                store_requires_paid_membership=True,
+                upc="666001",
+                product_name="milk",
+                product_category=None,
+                variant_label="gallon",
+                pack_count=1,
+                net_quantity=1.0,
+                quantity_unit=ProductUnit.GAL,
+                is_variable_weight=False,
+                price_total=3.00,
+                observed_at="2026-03-03T10:00:00+00:00",
+                is_sale=True,
+                sale=SaleInput(
+                    start_date="2026-03-01T00:00:00+00:00",
+                    requires_paid_membership=True,
+                    requires_loyalty_card=True,
+                ),
+            )
+        )
+        self.repository.create_price_observation(
+            PriceObservationInput(
+                store_address="500 Oak St",
+                store_latitude=10.0,
+                store_longitude=20.0,
+                store_name="Open Store",
+                upc="666002",
+                product_name="milk",
+                product_category=None,
+                variant_label="gallon",
+                pack_count=1,
+                net_quantity=1.0,
+                quantity_unit=ProductUnit.GAL,
+                is_variable_weight=False,
+                price_total=4.00,
+                observed_at="2026-03-03T10:01:00+00:00",
+                is_sale=False,
+            )
+        )
+
+        matches, unmatched = self.repository.optimize_grocery_list(
+            [
+                ShoppingOptimizationInput(
+                    item_id=1,
+                    product_name="milk",
+                    desired_count=1,
+                    desired_quantity_unit=ProductUnit.GAL,
+                    comparison_mode="cheapest_price",
+                    preferred_upc=None,
+                    allow_paid_membership_required=False,
+                    allow_loyalty_card_required=False,
+                )
+            ]
+        )
+
+        self.assertEqual(0, len(unmatched))
+        self.assertEqual(1, len(matches))
+        self.assertEqual("666002", matches[0].upc)
+        self.assertFalse(matches[0].requires_paid_membership)
+        self.assertFalse(matches[0].requires_loyalty_card)
 
     def test_categories_are_normalized(self) -> None:
         self.repository.create_price_observation(
@@ -396,7 +472,8 @@ class GroceryRepositoryTest(unittest.TestCase):
                 ShoppingOptimizationInput(
                     item_id=1,
                     product_name="soda",
-                    desired_count=24,
+                    desired_count=288,
+                    desired_quantity_unit=ProductUnit.OZ,
                     comparison_mode="cheapest_price",
                     preferred_upc=None,
                 )
@@ -439,7 +516,8 @@ class GroceryRepositoryTest(unittest.TestCase):
                 ShoppingOptimizationInput(
                     item_id=1,
                     product_name="milk",
-                    desired_count=1,
+                    desired_count=1000,
+                    desired_quantity_unit=ProductUnit.ML,
                     comparison_mode="best_unit_value",
                     preferred_upc=None,
                 )
@@ -448,6 +526,90 @@ class GroceryRepositoryTest(unittest.TestCase):
 
         self.assertEqual(0, len(unmatched))
         self.assertEqual("710001", matches[0].upc)
+
+    def test_optimize_best_unit_value_converts_fl_oz_volume_units(self) -> None:
+        self._create_observation(
+            upc="710101",
+            product_name="juice",
+            variant_label="12 fl oz can",
+            pack_count=1,
+            net_quantity=12.0,
+            quantity_unit=ProductUnit.FL_OZ,
+            price_total=1.00,
+            observed_at="2026-03-03T10:00:00+00:00",
+            store_address="111 First Ave",
+            store_name="Store A",
+        )
+        self._create_observation(
+            upc="710102",
+            product_name="juice",
+            variant_label="500 ml bottle",
+            pack_count=1,
+            net_quantity=500.0,
+            quantity_unit=ProductUnit.ML,
+            price_total=1.60,
+            observed_at="2026-03-03T10:01:00+00:00",
+            store_address="222 Second Ave",
+            store_name="Store B",
+        )
+
+        matches, unmatched = self.repository.optimize_grocery_list(
+            [
+                ShoppingOptimizationInput(
+                    item_id=1,
+                    product_name="juice",
+                    desired_count=500,
+                    desired_quantity_unit=ProductUnit.ML,
+                    comparison_mode="best_unit_value",
+                    preferred_upc=None,
+                )
+            ]
+        )
+
+        self.assertEqual(0, len(unmatched))
+        self.assertEqual("710101", matches[0].upc)
+
+    def test_optimize_best_unit_value_converts_cup_volume_units(self) -> None:
+        self._create_observation(
+            upc="710201",
+            product_name="stock",
+            variant_label="2 cups carton",
+            pack_count=1,
+            net_quantity=2.0,
+            quantity_unit=ProductUnit.CUP,
+            price_total=1.80,
+            observed_at="2026-03-03T10:00:00+00:00",
+            store_address="111 First Ave",
+            store_name="Store A",
+        )
+        self._create_observation(
+            upc="710202",
+            product_name="stock",
+            variant_label="500 ml carton",
+            pack_count=1,
+            net_quantity=500.0,
+            quantity_unit=ProductUnit.ML,
+            price_total=1.20,
+            observed_at="2026-03-03T10:01:00+00:00",
+            store_address="222 Second Ave",
+            store_name="Store B",
+        )
+
+        matches, unmatched = self.repository.optimize_grocery_list(
+            [
+                ShoppingOptimizationInput(
+                    item_id=1,
+                    product_name="stock",
+                    desired_count=500,
+                    desired_quantity_unit=ProductUnit.ML,
+                    comparison_mode="best_unit_value",
+                    preferred_upc=None,
+                )
+            ]
+        )
+
+        self.assertEqual(0, len(unmatched))
+        self.assertEqual("710202", matches[0].upc)
 
     def test_optimize_best_unit_value_converts_mass_units(self) -> None:
         self._create_observation(
@@ -480,7 +642,8 @@ class GroceryRepositoryTest(unittest.TestCase):
                 ShoppingOptimizationInput(
                     item_id=1,
                     product_name="rice",
-                    desired_count=1,
+                    desired_count=1000,
+                    desired_quantity_unit=ProductUnit.G,
                     comparison_mode="best_unit_value",
                     preferred_upc=None,
                 )
@@ -490,7 +653,51 @@ class GroceryRepositoryTest(unittest.TestCase):
         self.assertEqual(0, len(unmatched))
         self.assertEqual("720002", matches[0].upc)
 
-    def test_optimize_best_unit_value_uses_warning_fallback_for_incompatible_units(self) -> None:
+    def test_optimize_best_unit_value_item_request_prefers_larger_measurable_package(self) -> None:
+        self._create_observation(
+            upc="720101",
+            product_name="granulated sugar",
+            variant_label="giant eagle bag",
+            pack_count=1,
+            net_quantity=4.0,
+            quantity_unit=ProductUnit.LB,
+            price_total=3.99,
+            observed_at="2026-03-26T17:49:42-04:00",
+            store_address="2801 N High St, Columbus, OH 43202, USA",
+            store_name="giant eagle",
+        )
+        self._create_observation(
+            upc="720102",
+            product_name="granulated sugar",
+            variant_label="giant eagle bag",
+            pack_count=1,
+            net_quantity=10.0,
+            quantity_unit=ProductUnit.LB,
+            price_total=8.29,
+            observed_at="2026-03-26T17:52:04-04:00",
+            store_address="2801 N High St, Columbus, OH 43202, USA",
+            store_name="giant eagle",
+        )
+
+        matches, unmatched = self.repository.optimize_grocery_list(
+            [
+                ShoppingOptimizationInput(
+                    item_id=1,
+                    product_name="granulated sugar",
+                    desired_count=1,
+                    desired_quantity_unit=ProductUnit.EA,
+                    comparison_mode="best_unit_value",
+                    preferred_upc=None,
+                )
+            ]
+        )
+
+        self.assertEqual(0, len(unmatched))
+        self.assertEqual("720102", matches[0].upc)
+        self.assertIn("$0.83/lb", matches[0].pricing_basis_line)
+        self.assertIn("10 lb", matches[0].pricing_equation_line)
+
+    def test_optimize_best_unit_value_uses_package_count_for_item_requests(self) -> None:
         self._create_observation(
             upc="730001",
             product_name="soap",
@@ -522,6 +729,7 @@ class GroceryRepositoryTest(unittest.TestCase):
                     item_id=1,
                     product_name="soap",
                     desired_count=1,
+                    desired_quantity_unit=ProductUnit.EA,
                     comparison_mode="best_unit_value",
                     preferred_upc=None,
                 )
@@ -529,8 +737,8 @@ class GroceryRepositoryTest(unittest.TestCase):
         )
 
         self.assertEqual(1, len(matches))
-        self.assertEqual(1, len(unmatched))
-        self.assertIn("warning:", unmatched[0].reason.lower())
+        self.assertEqual(0, len(unmatched))
+        self.assertEqual("730002", matches[0].upc)
 
     def test_optimize_best_unit_value_preferred_upc_filters_candidates(self) -> None:
         self._create_observation(
@@ -575,7 +783,8 @@ class GroceryRepositoryTest(unittest.TestCase):
                 ShoppingOptimizationInput(
                     item_id=1,
                     product_name="juice",
-                    desired_count=1,
+                    desired_count=1000,
+                    desired_quantity_unit=ProductUnit.ML,
                     comparison_mode="best_unit_value",
                     preferred_upc="740001",
                 )
@@ -585,6 +794,327 @@ class GroceryRepositoryTest(unittest.TestCase):
         self.assertEqual(0, len(unmatched))
         self.assertEqual("740001", matches[0].upc)
         self.assertEqual("Store B", matches[0].store_name)
+
+    def test_optimize_cheapest_price_prefers_exact_variant_for_item_request(self) -> None:
+        self._create_observation(
+            upc="740101",
+            product_name="milk",
+            variant_label="fairlife 2% reduced fat bottle",
+            pack_count=1,
+            net_quantity=52.0,
+            quantity_unit=ProductUnit.FL_OZ,
+            price_total=4.67,
+            observed_at="2026-03-24T21:20:48-04:00",
+            store_address="2801 N High St, Columbus, OH 43202, USA",
+            store_name="giant eagle",
+        )
+
+        matches, unmatched = self.repository.optimize_grocery_list(
+            [
+                ShoppingOptimizationInput(
+                    item_id=1,
+                    product_name="milk",
+                    desired_count=1,
+                    desired_quantity_unit=ProductUnit.EA,
+                    comparison_mode="cheapest_price",
+                    preferred_upc="740101",
+                )
+            ]
+        )
+
+        self.assertEqual(0, len(unmatched))
+        self.assertEqual(1, len(matches))
+        self.assertEqual("740101", matches[0].upc)
+        self.assertAlmostEqual(4.67, matches[0].estimated_total_price, places=6)
+
+    def test_optimize_cheapest_price_heuristically_bridges_non_count_request_to_count_variant(self) -> None:
+        self._create_observation(
+            upc="740201",
+            product_name="cilantro",
+            variant_label="valverde bunch",
+            pack_count=1,
+            net_quantity=1.0,
+            quantity_unit=ProductUnit.EA,
+            price_total=0.99,
+            observed_at="2026-03-10T18:38:58-04:00",
+            store_address="2768 N High St, Columbus, OH 43201, USA",
+            store_name="lucky's clintonville",
+        )
+
+        matches, unmatched = self.repository.optimize_grocery_list(
+            [
+                ShoppingOptimizationInput(
+                    item_id=1,
+                    product_name="cilantro",
+                    desired_count=0.25,
+                    desired_quantity_unit=ProductUnit.OZ,
+                    comparison_mode="cheapest_price",
+                    preferred_upc="740201",
+                )
+            ]
+        )
+
+        self.assertEqual(0, len(unmatched))
+        self.assertEqual(1, len(matches))
+        self.assertEqual("740201", matches[0].upc)
+        self.assertAlmostEqual(0.99, matches[0].estimated_total_price, places=6)
+
+    def test_optimize_cheapest_price_uses_latest_active_sale(self) -> None:
+        self.repository.create_price_observation(
+            PriceObservationInput(
+                store_address="100 Sale St",
+                store_latitude=10.0,
+                store_longitude=20.0,
+                store_name="Store A",
+                upc="760001",
+                product_name="strawberries",
+                product_category=None,
+                variant_label="1 lb clamshell",
+                pack_count=1,
+                net_quantity=16.0,
+                quantity_unit=ProductUnit.OZ,
+                is_variable_weight=False,
+                price_total=3.99,
+                observed_at="2026-03-01T10:00:00+00:00",
+                is_sale=True,
+                sale=SaleInput(
+                    start_date="2026-03-01T00:00:00+00:00",
+                    expiration_date="2026-03-31T23:59:59+00:00",
+                ),
+            )
+        )
+        self.repository.create_price_observation(
+            PriceObservationInput(
+                store_address="100 Sale St",
+                store_latitude=10.0,
+                store_longitude=20.0,
+                store_name="Store A",
+                upc="760001",
+                product_name="strawberries",
+                product_category=None,
+                variant_label="1 lb clamshell",
+                pack_count=1,
+                net_quantity=16.0,
+                quantity_unit=ProductUnit.OZ,
+                is_variable_weight=False,
+                price_total=2.99,
+                observed_at="2026-03-10T10:00:00+00:00",
+                is_sale=True,
+                sale=SaleInput(
+                    start_date="2026-03-10T00:00:00+00:00",
+                    expiration_date="2026-03-31T23:59:59+00:00",
+                ),
+            )
+        )
+
+        matches, unmatched = self.repository.optimize_grocery_list(
+            [
+                ShoppingOptimizationInput(
+                    item_id=1,
+                    product_name="strawberries",
+                    desired_count=16,
+                    desired_quantity_unit=ProductUnit.OZ,
+                    comparison_mode="cheapest_price",
+                    preferred_upc=None,
+                )
+            ]
+        )
+
+        self.assertEqual(0, len(unmatched))
+        self.assertEqual(1, len(matches))
+        self.assertAlmostEqual(2.99, matches[0].estimated_total_price, places=6)
+        self.assertEqual(2.99, matches[0].observed_price_total)
+
+    def test_optimize_cheapest_price_ignores_expired_sale(self) -> None:
+        self.repository.create_price_observation(
+            PriceObservationInput(
+                store_address="100 Sale St",
+                store_latitude=10.0,
+                store_longitude=20.0,
+                store_name="Store A",
+                upc="760101",
+                product_name="blueberries",
+                product_category=None,
+                variant_label="6 oz clamshell",
+                pack_count=1,
+                net_quantity=6.0,
+                quantity_unit=ProductUnit.OZ,
+                is_variable_weight=False,
+                price_total=1.50,
+                observed_at="2026-03-01T10:00:00+00:00",
+                is_sale=True,
+                sale=SaleInput(
+                    start_date="2026-03-01T00:00:00+00:00",
+                    expiration_date="2026-03-02T00:00:00+00:00",
+                ),
+            )
+        )
+        self.repository.create_price_observation(
+            PriceObservationInput(
+                store_address="100 Sale St",
+                store_latitude=10.0,
+                store_longitude=20.0,
+                store_name="Store A",
+                upc="760101",
+                product_name="blueberries",
+                product_category=None,
+                variant_label="6 oz clamshell",
+                pack_count=1,
+                net_quantity=6.0,
+                quantity_unit=ProductUnit.OZ,
+                is_variable_weight=False,
+                price_total=2.50,
+                observed_at="2026-03-05T10:00:00+00:00",
+                is_sale=False,
+            )
+        )
+
+        matches, unmatched = self.repository.optimize_grocery_list(
+            [
+                ShoppingOptimizationInput(
+                    item_id=1,
+                    product_name="blueberries",
+                    desired_count=6,
+                    desired_quantity_unit=ProductUnit.OZ,
+                    comparison_mode="cheapest_price",
+                    preferred_upc=None,
+                )
+            ]
+        )
+
+        self.assertEqual(0, len(unmatched))
+        self.assertEqual(1, len(matches))
+        self.assertAlmostEqual(2.50, matches[0].estimated_total_price, places=6)
+        self.assertEqual(2.50, matches[0].observed_price_total)
+
+    def test_optimize_cheapest_price_uses_sale_multiple_and_non_sale_fallback(self) -> None:
+        self.repository.create_price_observation(
+            PriceObservationInput(
+                store_address="200 Promo Ave",
+                store_latitude=10.0,
+                store_longitude=20.0,
+                store_name="Store A",
+                upc="760201",
+                product_name="milk",
+                product_category=None,
+                variant_label="gallon",
+                pack_count=1,
+                net_quantity=1.0,
+                quantity_unit=ProductUnit.GAL,
+                is_variable_weight=False,
+                price_total=14.0 / 3.0,
+                observed_at="2026-03-20T10:00:00+00:00",
+                is_sale=True,
+                sale=SaleInput(
+                    start_date="2026-03-20T00:00:00+00:00",
+                    expiration_date="2026-03-31T23:59:59+00:00",
+                    minimum_quantity=3,
+                    multiple_of=3,
+                    limit_quantity=3,
+                ),
+            )
+        )
+        self.repository.create_price_observation(
+            PriceObservationInput(
+                store_address="200 Promo Ave",
+                store_latitude=10.0,
+                store_longitude=20.0,
+                store_name="Store A",
+                upc="760201",
+                product_name="milk",
+                product_category=None,
+                variant_label="gallon",
+                pack_count=1,
+                net_quantity=1.0,
+                quantity_unit=ProductUnit.GAL,
+                is_variable_weight=False,
+                price_total=5.50,
+                observed_at="2026-03-21T10:00:00+00:00",
+                is_sale=False,
+            )
+        )
+
+        matches, unmatched = self.repository.optimize_grocery_list(
+            [
+                ShoppingOptimizationInput(
+                    item_id=1,
+                    product_name="milk",
+                    desired_count=4,
+                    desired_quantity_unit=ProductUnit.GAL,
+                    comparison_mode="cheapest_price",
+                    preferred_upc=None,
+                )
+            ]
+        )
+
+        self.assertEqual(0, len(unmatched))
+        self.assertEqual(1, len(matches))
+        self.assertAlmostEqual((14.0 / 3.0) * 3 + 5.50, matches[0].estimated_total_price, places=6)
+
+    def test_optimize_single_store_only_prefers_store_covering_most_items(self) -> None:
+        self._create_observation(
+            upc="760301",
+            product_name="bread",
+            variant_label="loaf",
+            pack_count=1,
+            net_quantity=16.0,
+            quantity_unit=ProductUnit.OZ,
+            price_total=3.00,
+            observed_at="2026-03-03T10:00:00+00:00",
+            store_address="10 Alpha Rd",
+            store_name="Store A",
+        )
+        self._create_observation(
+            upc="760302",
+            product_name="milk",
+            variant_label="gallon",
+            pack_count=1,
+            net_quantity=1.0,
+            quantity_unit=ProductUnit.GAL,
+            price_total=4.00,
+            observed_at="2026-03-03T10:01:00+00:00",
+            store_address="10 Alpha Rd",
+            store_name="Store A",
+        )
+        self._create_observation(
+            upc="760303",
+            product_name="bread",
+            variant_label="loaf",
+            pack_count=1,
+            net_quantity=16.0,
+            quantity_unit=ProductUnit.OZ,
+            price_total=2.00,
+            observed_at="2026-03-03T10:02:00+00:00",
+            store_address="20 Beta Rd",
+            store_name="Store B",
+        )
+
+        matches, unmatched = self.repository.optimize_grocery_list(
+            [
+                ShoppingOptimizationInput(
+                    item_id=1,
+                    product_name="bread",
+                    desired_count=16,
+                    desired_quantity_unit=ProductUnit.OZ,
+                    comparison_mode="cheapest_price",
+                    preferred_upc=None,
+                    single_store_only=True,
+                ),
+                ShoppingOptimizationInput(
+                    item_id=2,
+                    product_name="milk",
+                    desired_count=1,
+                    desired_quantity_unit=ProductUnit.GAL,
+                    comparison_mode="cheapest_price",
+                    preferred_upc=None,
+                    single_store_only=True,
+                ),
+            ]
+        )
+
+        self.assertEqual(0, len(unmatched))
+        self.assertEqual(2, len(matches))
+        self.assertEqual({"Store A"}, {match.store_name for match in matches})
 
     def test_optimize_tiebreak_prefers_newer_observation(self) -> None:
         self._create_observation(
@@ -617,7 +1147,8 @@ class GroceryRepositoryTest(unittest.TestCase):
                 ShoppingOptimizationInput(
                     item_id=1,
                     product_name="bread",
-                    desired_count=1,
+                    desired_count=16,
+                    desired_quantity_unit=ProductUnit.OZ,
                     comparison_mode="cheapest_price",
                     preferred_upc="750001",
                 )

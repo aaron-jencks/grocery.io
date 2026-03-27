@@ -16,6 +16,8 @@ class ProductUnit(Enum):
     PT = 9
     TSP = 10
     TBSP = 11
+    FL_OZ = 12
+    CUP = 13
 
 
 class PackagingStyle(Enum):

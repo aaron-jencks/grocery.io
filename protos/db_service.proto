@@ -4,6 +4,7 @@ package grocery.database;
 option java_multiple_files = true;
 option java_package = "com.example.grocerystoreorganizer.grpc";
 option java_outer_classname = "DbServiceProto";
+option optimize_for = LITE_RUNTIME;
 
 message UpcRequest {
   string upc = 1;
@@ -24,6 +25,8 @@ enum ProductUnit {
   PT = 9;
   TSP = 10;
   TBSP = 11;
+  FL_OZ = 12;
+  CUP = 13;
 }
 
 enum ComparisonMode {
@@ -56,6 +59,7 @@ message UpcInfo {
   optional string brand = 10;
   optional string flavor = 11;
   optional PackagingStyle packagingStyle = 12;
+  optional bool noUpcAvailable = 13;
 }
 
 message UpcResponse {
@@ -98,6 +102,19 @@ service CatalogService {
   rpc ListVariantsForProduct(ListVariantsForProductRequest) returns (ListVariantsForProductResponse);
 }
 
+message StoreLookupRequest {
+  string storeAddress = 1;
+}
+
+message StoreLookupResponse {
+  bool found = 1;
+  optional StoreInfo store = 2;
+}
+
+service StoreService {
+  rpc FindStoreByAddress(StoreLookupRequest) returns (StoreLookupResponse);
+}
+
 message Coordinate {
   double latitude = 1;
   double longitude = 2;
@@ -107,6 +124,7 @@ message StoreInfo {
   string storeAddress = 1;
   Coordinate location = 2;
   optional string storeName = 3;
+  bool requiresPaidMembership = 4;
 }
 
 message SaleInfo {
@@ -114,6 +132,9 @@ message SaleInfo {
   optional string expirationDate = 2;
   optional int32 minimumQuantity = 3;
   optional int32 limitQuantity = 4;
+  bool requiresPaidMembership = 5;
+  bool requiresLoyaltyCard = 6;
+  optional int32 multipleOf = 7;
 }
 
 message PriceObservationRequest {
@@ -161,13 +182,17 @@ service ParsingService {
 message GroceryListOptimizationItem {
   int32 itemId = 1;
   string productName = 2;
-  int32 desiredCount = 3;
+  double desiredCount = 3;
   ComparisonMode comparisonMode = 4;
   optional string preferredUpc = 5;
+  ProductUnit desiredQuantityUnit = 6;
 }
 
 message OptimizeGroceryListRequest {
   repeated GroceryListOptimizationItem items = 1;
+  optional bool allowPaidMembershipRequired = 2;
+  optional bool allowLoyaltyCardRequired = 3;
+  optional bool singleStoreOnly = 4;
 }
 
 message OptimizedStore {
@@ -175,6 +200,7 @@ message OptimizedStore {
   optional string storeName = 2;
   string storeAddress = 3;
   Coordinate location = 4;
+  bool requiresPaidMembership = 5;
 }
 
 message OptimizedVariant {
@@ -192,13 +218,18 @@ message OptimizedVariant {
 message OptimizedItemMatch {
   int32 itemId = 1;
   ComparisonMode comparisonMode = 2;
-  int32 desiredCount = 3;
+  double desiredCount = 3;
   OptimizedStore store = 4;
   OptimizedVariant variant = 5;
   uint32 priceObservationId = 6;
   double observedPriceTotal = 7;
   string observedAt = 8;
   double estimatedTotalPrice = 9;
+  bool requiresPaidMembership = 10;
+  bool requiresLoyaltyCard = 11;
+  optional string pricingBasisLine = 12;
+  optional string pricingEquationLine = 13;
+  optional string approximationWarning = 14;
 }
 
 message UnmatchedOptimizationItem {

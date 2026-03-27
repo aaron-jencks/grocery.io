@@ -1,0 +1,3 @@
+ALTER TABLE stores ADD COLUMN requires_paid_membership INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE sales ADD COLUMN requires_paid_membership INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE sales ADD COLUMN requires_loyalty_card INTEGER NOT NULL DEFAULT 0;

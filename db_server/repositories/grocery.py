@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import datetime as dt
+import math
 import sqlite3
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Optional
 
@@ -15,21 +17,26 @@ from db_server.domain.commands import PriceObservationInput, SaleInput
 class ShoppingOptimizationInput:
     item_id: int
     product_name: str
-    desired_count: int
+    desired_count: float
+    desired_quantity_unit: ProductUnit
     comparison_mode: str
     preferred_upc: Optional[str]
+    allow_paid_membership_required: bool = True
+    allow_loyalty_card_required: bool = True
+    single_store_only: bool = False
 
 
 @dataclass(frozen=True)
 class ShoppingOptimizationMatch:
     item_id: int
     comparison_mode: str
-    desired_count: int
+    desired_count: float
     store_id: int
     store_name: Optional[str]
     store_address: str
-    store_latitude: float
-    store_longitude: float
+    store_latitude: Optional[float]
+    store_longitude: Optional[float]
+    store_requires_paid_membership: bool
     upc: str
     product_name: str
     variant_label: str
@@ -43,6 +50,11 @@ class ShoppingOptimizationMatch:
     observed_price_total: float
     observed_at: str
     estimated_total_price: float
+    requires_paid_membership: bool
+    requires_loyalty_card: bool
+    pricing_basis_line: Optional[str] = None
+    pricing_equation_line: Optional[str] = None
+    approximation_warning: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -52,9 +64,74 @@ class ShoppingOptimizationUnmatched:
     reason: str
 
 
+@dataclass(frozen=True)
+class CanonicalQuantity:
+    dimension: str
+    quantity: float
+
+
+@dataclass(frozen=True)
+class EffectivePriceSource:
+    row: sqlite3.Row
+    is_sale: bool
+    unit_price: float
+    minimum_quantity: Optional[int]
+    limit_quantity: Optional[int]
+    multiple_of: Optional[int]
+    requires_paid_membership: bool
+    requires_loyalty_card: bool
+
+
+@dataclass(frozen=True)
+class CandidatePlan:
+    row: sqlite3.Row
+    item: ShoppingOptimizationInput
+    estimated_total_price: float
+    total_supplied_quantity: float
+    unit_value_score: float
+    total_observation_units: int
+    sale_units: int
+    non_sale_units: int
+    requires_paid_membership: bool
+    requires_loyalty_card: bool
+    pricing_basis_line: Optional[str]
+    pricing_equation_line: Optional[str]
+    approximation_warning: Optional[str]
+
+
 class GroceryRepository:
     def __init__(self, database: Database):
         self.database = database
+
+    def find_store_by_address(self, address: str) -> Optional[Store]:
+        normalized_address = address.strip()
+        if not normalized_address:
+            return None
+        with self.database.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT
+                    rowid,
+                    name,
+                    address,
+                    latitude,
+                    longitude,
+                    requires_paid_membership
+                FROM stores
+                WHERE address = ?
+                """,
+                (normalized_address,),
+            ).fetchone()
+        if row is None:
+            return None
+        return Store(
+            rowid=int(row["rowid"]),
+            name=row["name"],
+            address=row["address"],
+            latitude=float(row["latitude"]) if row["latitude"] is not None else None,
+            longitude=float(row["longitude"]) if row["longitude"] is not None else None,
+            requires_paid_membership=bool(row["requires_paid_membership"]),
+        )
 
     def list_products(self, updated_after: Optional[str] = None) -> list[Product]:
         with self.database.connect() as connection:
@@ -254,6 +331,7 @@ class GroceryRepository:
                     s.address,
                     s.latitude,
                     s.longitude,
+                    s.requires_paid_membership,
                     v.rowid AS variant_id,
                     v.label,
                     v.brand,
@@ -273,7 +351,10 @@ class GroceryRepository:
                     sale.limit_quantity,
                     sale.expiration_date,
                     sale.start_date,
-                    sale.minimum_quantity
+                    sale.minimum_quantity,
+                    sale.multiple_of,
+                    sale.requires_paid_membership AS sale_requires_paid_membership,
+                    sale.requires_loyalty_card AS sale_requires_loyalty_card
                 FROM prices pr
                 JOIN stores s ON s.rowid = pr.store_id
                 JOIN variants v ON v.rowid = pr.variant_id
@@ -293,8 +374,9 @@ class GroceryRepository:
                 rowid=row["store_id"],
                 name=row["store_name"],
                 address=row["address"],
-                latitude=row["latitude"],
-                longitude=row["longitude"],
+                latitude=float(row["latitude"]) if row["latitude"] is not None else None,
+                longitude=float(row["longitude"]) if row["longitude"] is not None else None,
+                requires_paid_membership=bool(row["requires_paid_membership"]),
             ),
             variant=self._variant_from_row(row),
             price_total=row["price_total"],
@@ -308,9 +390,11 @@ class GroceryRepository:
     ) -> tuple[list[ShoppingOptimizationMatch], list[ShoppingOptimizationUnmatched]]:
         matches: list[ShoppingOptimizationMatch] = []
         unmatched: list[ShoppingOptimizationUnmatched] = []
+        candidates_by_item: dict[int, list[CandidatePlan]] = {}
+
         for item in items:
-            match, reason = self._find_best_match_for_item(item)
-            if match is None:
+            candidates, reason = self._find_candidate_plans_for_item(item)
+            if not candidates:
                 unmatched.append(
                     ShoppingOptimizationUnmatched(
                         item_id=item.item_id,
@@ -318,16 +402,48 @@ class GroceryRepository:
                         reason=reason or "No price information available",
                     )
                 )
-            else:
-                matches.append(match)
-                if reason is not None:
+                continue
+            candidates_by_item[item.item_id] = candidates
+
+        single_store_requested = any(item.single_store_only for item in items)
+        if single_store_requested:
+            best_store_id = self._select_best_single_store(candidates_by_item)
+            if best_store_id is None:
+                for item in items:
+                    if item.item_id not in candidates_by_item:
+                        continue
                     unmatched.append(
                         ShoppingOptimizationUnmatched(
                             item_id=item.item_id,
                             product_name=item.product_name,
-                            reason=f"Warning: {reason}",
+                            reason="No qualifying option at a single store.",
                         )
                     )
+                return matches, unmatched
+
+            for item in items:
+                item_candidates = candidates_by_item.get(item.item_id)
+                if not item_candidates:
+                    continue
+                store_candidate = next((candidate for candidate in item_candidates if int(candidate.row["store_id"]) == best_store_id), None)
+                if store_candidate is None:
+                    unmatched.append(
+                        ShoppingOptimizationUnmatched(
+                            item_id=item.item_id,
+                            product_name=item.product_name,
+                            reason="No qualifying option at selected store.",
+                        )
+                    )
+                    continue
+                matches.append(self._candidate_to_match(store_candidate))
+            return matches, unmatched
+
+        for item in items:
+            item_candidates = candidates_by_item.get(item.item_id)
+            if not item_candidates:
+                continue
+            matches.append(self._candidate_to_match(item_candidates[0]))
+
         return matches, unmatched
 
     def _resolve_store_id(
@@ -336,20 +452,21 @@ class GroceryRepository:
         payload: PriceObservationInput,
     ) -> int:
         row = connection.execute(
-            "SELECT rowid, name FROM stores WHERE address = ?",
+            "SELECT rowid, name, latitude, longitude FROM stores WHERE address = ?",
             (payload.store_address,),
         ).fetchone()
         if row is not None:
             connection.execute(
                 """
                 UPDATE stores
-                SET name = ?, latitude = ?, longitude = ?
+                SET name = ?, latitude = ?, longitude = ?, requires_paid_membership = ?
                 WHERE rowid = ?
                 """,
                 (
                     payload.store_name or row["name"],
-                    payload.store_latitude,
-                    payload.store_longitude,
+                    payload.store_latitude if payload.store_latitude is not None else row["latitude"],
+                    payload.store_longitude if payload.store_longitude is not None else row["longitude"],
+                    int(payload.store_requires_paid_membership),
                     row["rowid"],
                 ),
             )
@@ -357,14 +474,15 @@ class GroceryRepository:
 
         cursor = connection.execute(
             """
-            INSERT INTO stores(name, address, latitude, longitude)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO stores(name, address, latitude, longitude, requires_paid_membership)
+            VALUES (?, ?, ?, ?, ?)
             """,
             (
                 payload.store_name,
                 payload.store_address,
                 payload.store_latitude,
                 payload.store_longitude,
+                int(payload.store_requires_paid_membership),
             ),
         )
         return int(cursor.lastrowid)
@@ -373,9 +491,24 @@ class GroceryRepository:
         self,
         item: ShoppingOptimizationInput,
     ) -> tuple[Optional[ShoppingOptimizationMatch], Optional[str]]:
-        desired_count = max(1, item.desired_count)
+        candidates, reason = self._find_candidate_plans_for_item(item)
+        if not candidates:
+            return None, reason
+        return self._candidate_to_match(candidates[0]), None
+
+    def _find_candidate_plans_for_item(
+        self,
+        item: ShoppingOptimizationInput,
+    ) -> tuple[list[CandidatePlan], Optional[str]]:
+        desired_count = float(item.desired_count)
+        if desired_count <= 0:
+            return [], "Desired quantity must be greater than zero."
+        requested_quantity = self._to_canonical_quantity(desired_count, item.desired_quantity_unit)
+        if requested_quantity is None:
+            return [], "Requested quantity unit is not supported."
+
         with self.database.connect() as connection:
-            if item.preferred_upc:
+            if item.preferred_upc and item.comparison_mode == "cheapest_price":
                 rows = connection.execute(
                     """
                     SELECT
@@ -387,6 +520,7 @@ class GroceryRepository:
                         s.address AS store_address,
                         s.latitude AS store_latitude,
                         s.longitude AS store_longitude,
+                        s.requires_paid_membership AS store_requires_paid_membership,
                         v.rowid AS variant_id,
                         v.label AS variant_label,
                         v.brand AS variant_brand,
@@ -395,13 +529,24 @@ class GroceryRepository:
                         v.pack_count,
                         v.net_quantity,
                         v.quantity_unit,
+                        v.is_variable_weight,
                         v.upc,
-                        p.name AS product_name
+                        p.name AS product_name,
+                        pr.is_sale,
+                        sale.requires_paid_membership AS sale_requires_paid_membership,
+                        sale.requires_loyalty_card AS sale_requires_loyalty_card,
+                        sale.minimum_quantity,
+                        sale.limit_quantity,
+                        sale.multiple_of,
+                        sale.start_date,
+                        sale.expiration_date
                     FROM prices pr
                     JOIN stores s ON s.rowid = pr.store_id
                     JOIN variants v ON v.rowid = pr.variant_id
                     JOIN products p ON p.rowid = v.product_id
+                    LEFT JOIN sales sale ON sale.rowid = pr.sale_id
                     WHERE v.upc = ?
+                    ORDER BY pr.observed_at DESC
                     """,
                     (item.preferred_upc,),
                 ).fetchall()
@@ -417,6 +562,7 @@ class GroceryRepository:
                         s.address AS store_address,
                         s.latitude AS store_latitude,
                         s.longitude AS store_longitude,
+                        s.requires_paid_membership AS store_requires_paid_membership,
                         v.rowid AS variant_id,
                         v.label AS variant_label,
                         v.brand AS variant_brand,
@@ -425,101 +571,78 @@ class GroceryRepository:
                         v.pack_count,
                         v.net_quantity,
                         v.quantity_unit,
+                        v.is_variable_weight,
                         v.upc,
-                        p.name AS product_name
+                        p.name AS product_name,
+                        pr.is_sale,
+                        sale.requires_paid_membership AS sale_requires_paid_membership,
+                        sale.requires_loyalty_card AS sale_requires_loyalty_card,
+                        sale.minimum_quantity,
+                        sale.limit_quantity,
+                        sale.multiple_of,
+                        sale.start_date,
+                        sale.expiration_date
                     FROM prices pr
                     JOIN stores s ON s.rowid = pr.store_id
                     JOIN variants v ON v.rowid = pr.variant_id
                     JOIN products p ON p.rowid = v.product_id
+                    LEFT JOIN sales sale ON sale.rowid = pr.sale_id
                     WHERE lower(p.name) = ?
+                    ORDER BY pr.observed_at DESC
                     """,
                     (self._normalize_product_name(item.product_name),),
                 ).fetchall()
 
         if not rows:
-            return None, "No price information available"
+            return [], "No price information available"
 
-        target_dimension: Optional[str] = None
-        fallback_warning: Optional[str] = None
-        if item.comparison_mode == "best_unit_value":
-            target_dimension = self._resolve_target_dimension(rows)
-            if target_dimension is None:
-                fallback_warning = (
-                    "Used approximate per-unit comparison across non-comparable units. "
-                    "Results may be suboptimal."
-                )
-
-        best_row = None
-        best_score = None
-        for row in rows:
-            pack_count = int(row["pack_count"]) if row["pack_count"] else 1
-            price_total = float(row["price_total"])
-            if pack_count <= 0:
-                continue
-
-            if item.comparison_mode == "best_unit_value":
-                net_quantity = float(row["net_quantity"])
-                if net_quantity <= 0:
-                    continue
-                if target_dimension is None:
-                    score = price_total / (pack_count * net_quantity)
-                else:
-                    converted_quantity = self._convert_quantity(
-                        net_quantity=net_quantity,
-                        unit=ProductUnit(int(row["quantity_unit"])),
-                        target_dimension=target_dimension,
-                    )
-                    if converted_quantity is None or converted_quantity <= 0:
-                        continue
-                    score = price_total / (pack_count * converted_quantity)
-            else:
-                score = price_total / pack_count
-
-            observed_at = row["observed_at"]
+        filtered_rows = self._apply_preferred_variant_filter(item, rows)
+        if not filtered_rows:
+            return [], "No matching preferred variant information available."
+        eligible_rows = [
+            row for row in filtered_rows
             if (
-                best_row is None
-                or score < best_score
-                or (score == best_score and observed_at > best_row["observed_at"])
-            ):
-                best_row = row
-                best_score = score
-
-        if best_row is None:
-            if item.comparison_mode == "best_unit_value":
-                return (
-                    None,
-                    "No comparable unit-convertible price information available.",
+                item.allow_paid_membership_required
+                or not (
+                    bool(row["store_requires_paid_membership"])
+                    or bool(row["sale_requires_paid_membership"])
                 )
-            return None, "No price information available"
-
-        selected_pack = int(best_row["pack_count"]) if best_row["pack_count"] else 1
-        estimated_total = float(best_row["price_total"]) * desired_count / max(1, selected_pack)
-        return (
-            ShoppingOptimizationMatch(
-                item_id=item.item_id,
-                comparison_mode=item.comparison_mode,
-                desired_count=desired_count,
-                store_id=int(best_row["store_id"]),
-                store_name=best_row["store_name"],
-                store_address=best_row["store_address"],
-                store_latitude=float(best_row["store_latitude"]),
-                store_longitude=float(best_row["store_longitude"]),
-                upc=best_row["upc"],
-                product_name=best_row["product_name"],
-                variant_label=best_row["variant_label"],
-                variant_brand=best_row["variant_brand"],
-                variant_flavor=best_row["variant_flavor"],
-                variant_packaging_style=self._packaging_style_from_db(best_row["variant_packaging_style"]),
-                pack_count=int(best_row["pack_count"]),
-                net_quantity=float(best_row["net_quantity"]),
-                quantity_unit=ProductUnit(int(best_row["quantity_unit"])),
-                price_observation_id=int(best_row["price_observation_id"]),
-                observed_price_total=float(best_row["price_total"]),
-                observed_at=best_row["observed_at"],
-                estimated_total_price=estimated_total,
-            ),
-            fallback_warning,
+            )
+            and (
+                item.allow_loyalty_card_required
+                or not bool(row["sale_requires_loyalty_card"])
+            )
+        ]
+        if not eligible_rows:
+            return [], "No price information available"
+        best_value_dimension = (
+            self._resolve_target_dimension(eligible_rows)
+            if item.comparison_mode == "best_unit_value" and item.desired_quantity_unit == ProductUnit.EA
+            else None
         )
+        if best_value_dimension == "count":
+            best_value_dimension = None
+
+        grouped: dict[tuple[int, int], list[sqlite3.Row]] = defaultdict(list)
+        for row in eligible_rows:
+            grouped[(int(row["store_id"]), int(row["variant_id"]))].append(row)
+
+        candidates: list[CandidatePlan] = []
+        for group_rows in grouped.values():
+            candidates.extend(
+                self._candidate_plans_for_group(
+                    item,
+                    requested_quantity,
+                    group_rows,
+                    best_value_dimension=best_value_dimension,
+                )
+            )
+
+        if not candidates:
+            return [], "No price option could satisfy the requested quantity."
+
+        candidates.sort(key=self._candidate_sort_key)
+        return candidates, None
 
     def _resolve_target_dimension(self, rows: list[sqlite3.Row]) -> Optional[str]:
         candidate_dimensions: list[set[str]] = []
@@ -538,39 +661,536 @@ class GroceryRepository:
             return "mass"
         return None
 
-    def _unit_dimensions(self, unit: ProductUnit) -> set[str]:
-        if unit == ProductUnit.EA:
-            return {"count"}
-        if unit in {ProductUnit.LB, ProductUnit.KG, ProductUnit.G}:
-            return {"mass"}
-        if unit in {
-            ProductUnit.LIT,
-            ProductUnit.ML,
-            ProductUnit.GAL,
-            ProductUnit.QT,
-            ProductUnit.PT,
-            ProductUnit.TSP,
-            ProductUnit.TBSP,
-        }:
-            return {"volume"}
-        if unit == ProductUnit.OZ:
-            return {"mass", "volume"}
-        return set()
-
-    def _convert_quantity(
+    def _apply_preferred_variant_filter(
         self,
-        net_quantity: float,
-        unit: ProductUnit,
-        target_dimension: str,
+        item: ShoppingOptimizationInput,
+        rows: list[sqlite3.Row],
+    ) -> list[sqlite3.Row]:
+        if not item.preferred_upc:
+            return rows
+        if item.comparison_mode == "cheapest_price":
+            return [row for row in rows if row["upc"] == item.preferred_upc]
+
+        preferred_variant = self.resolve_upc(item.preferred_upc)
+        preferred_brand = preferred_variant.brand if preferred_variant is not None else None
+        if preferred_brand:
+            normalized_brand = preferred_brand.strip().lower()
+            brand_rows = [
+                row for row in rows
+                if row["variant_brand"] is not None and str(row["variant_brand"]).strip().lower() == normalized_brand
+            ]
+            if brand_rows:
+                return brand_rows
+        return [row for row in rows if row["upc"] == item.preferred_upc]
+
+    def _candidate_plans_for_group(
+        self,
+        item: ShoppingOptimizationInput,
+        requested_quantity: CanonicalQuantity,
+        rows: list[sqlite3.Row],
+        best_value_dimension: Optional[str] = None,
+    ) -> list[CandidatePlan]:
+        latest_sale: Optional[EffectivePriceSource] = None
+        latest_non_sale: Optional[EffectivePriceSource] = None
+        for row in rows:
+            if bool(row["is_sale"]):
+                if latest_sale is None and self._is_sale_active(row):
+                    latest_sale = self._to_effective_price_source(row, is_sale=True)
+            elif latest_non_sale is None:
+                latest_non_sale = self._to_effective_price_source(row, is_sale=False)
+            if latest_sale is not None and latest_non_sale is not None:
+                break
+
+        reference_row = latest_sale.row if latest_sale is not None else latest_non_sale.row if latest_non_sale is not None else None
+        if reference_row is None:
+            return []
+        per_purchase_quantity = self._per_purchase_quantity(reference_row, item.desired_quantity_unit)
+        if per_purchase_quantity is None or per_purchase_quantity.dimension != requested_quantity.dimension:
+            heuristic_quantity = self._heuristic_count_request_quantity(reference_row, item)
+            if heuristic_quantity is None:
+                return []
+            required_units = max(1, math.ceil(heuristic_quantity - 1e-9))
+            return self._candidate_plans_from_required_units(
+                item=item,
+                latest_sale=latest_sale,
+                latest_non_sale=latest_non_sale,
+                per_purchase_quantity=1.0,
+                required_units=required_units,
+                approximation_warning=(
+                    "Approximate 1:1 conversion used between requested unit and count-based variant."
+                ),
+                best_value_dimension=best_value_dimension,
+            )
+        if per_purchase_quantity.quantity <= 0:
+            return []
+
+        required_units = max(1, math.ceil(requested_quantity.quantity / per_purchase_quantity.quantity - 1e-9))
+        return self._candidate_plans_from_required_units(
+            item=item,
+            latest_sale=latest_sale,
+            latest_non_sale=latest_non_sale,
+            per_purchase_quantity=per_purchase_quantity.quantity,
+            required_units=required_units,
+            best_value_dimension=best_value_dimension,
+        )
+
+    def _candidate_plans_from_required_units(
+        self,
+        item: ShoppingOptimizationInput,
+        latest_sale: Optional[EffectivePriceSource],
+        latest_non_sale: Optional[EffectivePriceSource],
+        per_purchase_quantity: float,
+        required_units: int,
+        approximation_warning: Optional[str] = None,
+        best_value_dimension: Optional[str] = None,
+    ) -> list[CandidatePlan]:
+        plans: list[CandidatePlan] = []
+
+        if latest_non_sale is not None:
+            plans.append(
+                self._build_candidate_plan(
+                    row=latest_non_sale.row,
+                    item=item,
+                    per_purchase_quantity=per_purchase_quantity,
+                    sale_units=0,
+                    non_sale_units=required_units,
+                    sale_source=latest_sale,
+                    non_sale_source=latest_non_sale,
+                    approximation_warning=approximation_warning,
+                    best_value_dimension=best_value_dimension,
+                )
+            )
+
+        if latest_sale is None:
+            return plans
+
+        for sale_units in self._allowed_sale_units(latest_sale, required_units):
+            if sale_units >= required_units:
+                plans.append(
+                    self._build_candidate_plan(
+                        row=latest_sale.row,
+                        item=item,
+                        per_purchase_quantity=per_purchase_quantity,
+                        sale_units=sale_units,
+                        non_sale_units=0,
+                        sale_source=latest_sale,
+                        non_sale_source=latest_non_sale,
+                        approximation_warning=approximation_warning,
+                        best_value_dimension=best_value_dimension,
+                    )
+                )
+            elif latest_non_sale is not None:
+                plans.append(
+                    self._build_candidate_plan(
+                        row=latest_sale.row,
+                        item=item,
+                        per_purchase_quantity=per_purchase_quantity,
+                        sale_units=sale_units,
+                        non_sale_units=required_units - sale_units,
+                        sale_source=latest_sale,
+                        non_sale_source=latest_non_sale,
+                        approximation_warning=approximation_warning,
+                        best_value_dimension=best_value_dimension,
+                    )
+                )
+
+        return plans
+
+    def _heuristic_count_request_quantity(
+        self,
+        row: sqlite3.Row,
+        item: ShoppingOptimizationInput,
     ) -> Optional[float]:
-        if target_dimension == "count":
-            return net_quantity if unit == ProductUnit.EA else None
-        if target_dimension == "mass":
-            factor = self._mass_factor(unit)
-            return net_quantity * factor if factor is not None else None
-        if target_dimension == "volume":
-            factor = self._volume_factor(unit)
-            return net_quantity * factor if factor is not None else None
+        observed_unit = ProductUnit(int(row["quantity_unit"]))
+        if observed_unit != ProductUnit.EA:
+            return None
+        if item.desired_quantity_unit == ProductUnit.EA:
+            return None
+        return float(item.desired_count)
+
+    def _candidate_sort_key(self, candidate: CandidatePlan) -> tuple[float, float, str]:
+        if candidate.item.comparison_mode == "best_unit_value":
+            return (
+                candidate.unit_value_score,
+                candidate.estimated_total_price,
+                -self._observed_at_sort_value(candidate.row["observed_at"]),
+            )
+        return (
+            candidate.estimated_total_price,
+            candidate.unit_value_score,
+            -self._observed_at_sort_value(candidate.row["observed_at"]),
+        )
+
+    def _observed_at_sort_value(self, observed_at: str) -> float:
+        return self._coerce_utc(dt.datetime.fromisoformat(observed_at)).timestamp()
+
+    def _select_best_single_store(self, candidates_by_item: dict[int, list[CandidatePlan]]) -> Optional[int]:
+        by_store: dict[int, list[CandidatePlan]] = defaultdict(list)
+        for item_candidates in candidates_by_item.values():
+            seen_store_ids: set[int] = set()
+            for candidate in item_candidates:
+                store_id = int(candidate.row["store_id"])
+                if store_id in seen_store_ids:
+                    continue
+                by_store[store_id].append(candidate)
+                seen_store_ids.add(store_id)
+
+        if not by_store:
+            return None
+
+        def score(store_id: int) -> tuple[int, float, int]:
+            store_candidates = by_store[store_id]
+            return (-len(store_candidates), sum(c.estimated_total_price for c in store_candidates), store_id)
+
+        return min(by_store.keys(), key=score)
+
+    def _candidate_to_match(self, candidate: CandidatePlan) -> ShoppingOptimizationMatch:
+        row = candidate.row
+        return ShoppingOptimizationMatch(
+            item_id=candidate.item.item_id,
+            comparison_mode=candidate.item.comparison_mode,
+            desired_count=float(candidate.item.desired_count),
+            store_id=int(row["store_id"]),
+            store_name=row["store_name"],
+            store_address=row["store_address"],
+            store_latitude=float(row["store_latitude"]) if row["store_latitude"] is not None else None,
+            store_longitude=float(row["store_longitude"]) if row["store_longitude"] is not None else None,
+            store_requires_paid_membership=bool(row["store_requires_paid_membership"]),
+            upc=row["upc"],
+            product_name=row["product_name"],
+            variant_label=row["variant_label"],
+            variant_brand=row["variant_brand"],
+            variant_flavor=row["variant_flavor"],
+            variant_packaging_style=self._packaging_style_from_db(row["variant_packaging_style"]),
+            pack_count=int(row["pack_count"]),
+            net_quantity=float(row["net_quantity"]),
+            quantity_unit=ProductUnit(int(row["quantity_unit"])),
+            price_observation_id=int(row["price_observation_id"]),
+            observed_price_total=float(row["price_total"]),
+            observed_at=row["observed_at"],
+            estimated_total_price=candidate.estimated_total_price,
+            requires_paid_membership=candidate.requires_paid_membership,
+            requires_loyalty_card=candidate.requires_loyalty_card,
+            pricing_basis_line=candidate.pricing_basis_line,
+            pricing_equation_line=candidate.pricing_equation_line,
+            approximation_warning=candidate.approximation_warning,
+        )
+
+    def _build_candidate_plan(
+        self,
+        row: sqlite3.Row,
+        item: ShoppingOptimizationInput,
+        per_purchase_quantity: float,
+        sale_units: int,
+        non_sale_units: int,
+        sale_source: Optional[EffectivePriceSource],
+        non_sale_source: Optional[EffectivePriceSource],
+        approximation_warning: Optional[str] = None,
+        best_value_dimension: Optional[str] = None,
+    ) -> CandidatePlan:
+        sale_total = float(sale_units) * (sale_source.unit_price if sale_source is not None else 0.0)
+        non_sale_total = float(non_sale_units) * (non_sale_source.unit_price if non_sale_source is not None else 0.0)
+        total_observation_units = sale_units + non_sale_units
+        total_supplied_quantity = per_purchase_quantity * total_observation_units
+        estimated_total_price = sale_total + non_sale_total
+        score_quantity = total_supplied_quantity
+        if best_value_dimension is not None:
+            measurable_quantity = self._package_quantity_for_dimension(row, best_value_dimension)
+            if measurable_quantity is not None and measurable_quantity > 0:
+                score_quantity = measurable_quantity * total_observation_units
+        unit_value_score = estimated_total_price / score_quantity
+        requires_paid_membership = bool(row["store_requires_paid_membership"]) or (sale_units > 0 and sale_source is not None and sale_source.requires_paid_membership)
+        requires_loyalty_card = sale_units > 0 and sale_source is not None and sale_source.requires_loyalty_card
+        pricing_basis_line, pricing_equation_line = self._build_pricing_display(
+            row=row,
+            item=item,
+            per_purchase_quantity=per_purchase_quantity,
+            sale_units=sale_units,
+            non_sale_units=non_sale_units,
+            sale_source=sale_source,
+            non_sale_source=non_sale_source,
+            estimated_total_price=estimated_total_price,
+            total_supplied_quantity=total_supplied_quantity,
+        )
+        return CandidatePlan(
+            row=row,
+            item=item,
+            estimated_total_price=estimated_total_price,
+            total_supplied_quantity=total_supplied_quantity,
+            unit_value_score=unit_value_score,
+            total_observation_units=total_observation_units,
+            sale_units=sale_units,
+            non_sale_units=non_sale_units,
+            requires_paid_membership=requires_paid_membership,
+            requires_loyalty_card=requires_loyalty_card,
+            pricing_basis_line=pricing_basis_line,
+            pricing_equation_line=pricing_equation_line,
+            approximation_warning=approximation_warning,
+        )
+
+    def _allowed_sale_units(self, source: EffectivePriceSource, required_units: int) -> list[int]:
+        step = max(1, int(source.multiple_of) if source.multiple_of is not None else 1)
+        minimum = max(1, int(source.minimum_quantity) if source.minimum_quantity is not None else 1)
+        minimum = step * math.ceil(minimum / step)
+        if source.limit_quantity is not None and int(source.limit_quantity) < minimum:
+            return []
+        smallest_satisfying = step * math.ceil(max(required_units, minimum) / step)
+        max_units = int(source.limit_quantity) if source.limit_quantity is not None else smallest_satisfying
+        cap = min(max_units, smallest_satisfying) if max_units >= smallest_satisfying else max_units
+        if cap < minimum:
+            return []
+        return list(range(minimum, cap + 1, step))
+
+    def _build_pricing_display(
+        self,
+        row: sqlite3.Row,
+        item: ShoppingOptimizationInput,
+        per_purchase_quantity: float,
+        sale_units: int,
+        non_sale_units: int,
+        sale_source: Optional[EffectivePriceSource],
+        non_sale_source: Optional[EffectivePriceSource],
+        estimated_total_price: float,
+        total_supplied_quantity: float,
+    ) -> tuple[str, str]:
+        package_label = self._package_label(row)
+        package_quantity = self._package_quantity_display(row)
+        package_unit_price = self._package_unit_price_display(row, source=(sale_source if sale_units > 0 and sale_source is not None else non_sale_source))
+        desired_unit_label = self._unit_display(item.desired_quantity_unit)
+        requested_quantity = self._format_number(item.desired_count)
+        supplied_quantity = self._format_number(total_supplied_quantity)
+        estimated_total_label = self._format_money(estimated_total_price)
+
+        if sale_units > 0 and non_sale_units > 0 and sale_source is not None and non_sale_source is not None:
+            basis = (
+                f"{package_label} sale {self._format_money(sale_source.unit_price)} "
+                f"+ regular {self._format_money(non_sale_source.unit_price)}"
+            )
+            equation = (
+                f"{sale_units} sale + {non_sale_units} regular = {estimated_total_label} "
+                f"for {supplied_quantity} {desired_unit_label} (need {requested_quantity})"
+            )
+            return basis, equation
+
+        source = sale_source if sale_units > 0 and sale_source is not None else non_sale_source
+        units = sale_units if sale_units > 0 else non_sale_units
+        unit_price = source.unit_price if source is not None else float(row["price_total"])
+        basis = f"{package_label}{package_quantity} @ {self._format_money(unit_price)}{package_unit_price}"
+        equation = self._single_source_equation(
+            row=row,
+            units=units,
+            unit_price=unit_price,
+            estimated_total_label=estimated_total_label,
+            supplied_quantity=supplied_quantity,
+            desired_unit_label=desired_unit_label,
+            requested_quantity=requested_quantity,
+        )
+        return basis, equation
+
+    def _single_source_equation(
+        self,
+        row: sqlite3.Row,
+        units: int,
+        unit_price: float,
+        estimated_total_label: str,
+        supplied_quantity: str,
+        desired_unit_label: str,
+        requested_quantity: str,
+    ) -> str:
+        unit = ProductUnit(int(row["quantity_unit"]))
+        count = max(1, int(row["pack_count"]) if row["pack_count"] is not None else 1)
+        if unit != ProductUnit.EA:
+            total_quantity = float(row["net_quantity"])
+            if not bool(row["is_variable_weight"]):
+                total_quantity *= count
+            unit_price_display = self._format_money(unit_price / total_quantity)
+            return (
+                f"{units} x {self._format_number(total_quantity)} {self._unit_display(unit)} "
+                f"* {unit_price_display}/{self._unit_display(unit)} = {estimated_total_label}"
+            )
+        return (
+            f"{units} x {self._package_label(row).lower()} = {estimated_total_label} "
+            f"for {supplied_quantity} {desired_unit_label} (need {requested_quantity})"
+        )
+
+    def _package_unit_price_display(
+        self,
+        row: sqlite3.Row,
+        source: Optional[EffectivePriceSource],
+    ) -> str:
+        unit = ProductUnit(int(row["quantity_unit"]))
+        if unit == ProductUnit.EA:
+            return ""
+        quantity = float(row["net_quantity"])
+        if not bool(row["is_variable_weight"]):
+            quantity *= max(1, int(row["pack_count"]) if row["pack_count"] is not None else 1)
+        if quantity <= 0:
+            return ""
+        unit_price = (source.unit_price if source is not None else float(row["price_total"])) / quantity
+        return f" = {self._format_money(unit_price)}/{self._unit_display(unit)}"
+
+    def _package_label(self, row: sqlite3.Row) -> str:
+        packaging_style = self._packaging_style_from_db(row["variant_packaging_style"])
+        packaging_display = self._packaging_style_display(packaging_style)
+        count = max(1, int(row["pack_count"]) if row["pack_count"] is not None else 1)
+        if bool(row["is_variable_weight"]):
+            return f"1 {packaging_display}"
+        if count == 1:
+            return f"1 {packaging_display}"
+        return f"{count} {packaging_display}"
+
+    def _package_quantity_display(self, row: sqlite3.Row) -> str:
+        unit = ProductUnit(int(row["quantity_unit"]))
+        quantity = float(row["net_quantity"])
+        count = max(1, int(row["pack_count"]) if row["pack_count"] is not None else 1)
+        if bool(row["is_variable_weight"]):
+            return f" / {self._format_number(quantity)} {self._unit_display(unit)}"
+        if unit == ProductUnit.EA:
+            return ""
+        total_quantity = quantity * count
+        return f" ({self._format_number(total_quantity)} {self._unit_display(unit)})"
+
+    def _package_quantity_for_dimension(
+        self,
+        row: sqlite3.Row,
+        dimension: str,
+    ) -> Optional[float]:
+        unit = ProductUnit(int(row["quantity_unit"]))
+        if unit == ProductUnit.EA:
+            return None
+        quantity = float(row["net_quantity"])
+        if not bool(row["is_variable_weight"]):
+            quantity *= max(1, int(row["pack_count"]) if row["pack_count"] is not None else 1)
+        canonical = self._to_canonical_quantity(quantity, unit)
+        if canonical is None or canonical.dimension != dimension:
+            return None
+        return canonical.quantity
+
+    def _format_money(self, value: float) -> str:
+        return f"${value:.2f}"
+
+    def _format_number(self, value: float) -> str:
+        rounded = round(value)
+        if abs(value - rounded) < 1e-9:
+            return str(int(rounded))
+        return f"{value:.2f}".rstrip("0").rstrip(".")
+
+    def _unit_display(self, unit: ProductUnit) -> str:
+        return {
+            ProductUnit.OZ: "oz",
+            ProductUnit.LB: "lb",
+            ProductUnit.EA: "item",
+            ProductUnit.KG: "kg",
+            ProductUnit.G: "g",
+            ProductUnit.LIT: "L",
+            ProductUnit.ML: "mL",
+            ProductUnit.GAL: "gal",
+            ProductUnit.QT: "qt",
+            ProductUnit.PT: "pt",
+            ProductUnit.TSP: "tsp",
+            ProductUnit.TBSP: "tbsp",
+            ProductUnit.FL_OZ: "fl oz",
+            ProductUnit.CUP: "cup",
+        }[unit]
+
+    def _packaging_style_display(self, style: Optional[PackagingStyle]) -> str:
+        return {
+            PackagingStyle.UNSPECIFIED: "package",
+            PackagingStyle.LOOSE: "loose",
+            PackagingStyle.CAN: "can",
+            PackagingStyle.BOTTLE: "bottle",
+            PackagingStyle.BOX: "box",
+            PackagingStyle.BAG: "bag",
+            PackagingStyle.CARTON: "carton",
+            PackagingStyle.BUNCH: "bunch",
+            PackagingStyle.OTHER: "package",
+            None: "package",
+        }[style]
+
+    def _to_effective_price_source(self, row: sqlite3.Row, is_sale: bool) -> EffectivePriceSource:
+        return EffectivePriceSource(
+            row=row,
+            is_sale=is_sale,
+            unit_price=float(row["price_total"]),
+            minimum_quantity=row["minimum_quantity"] if is_sale else None,
+            limit_quantity=row["limit_quantity"] if is_sale else None,
+            multiple_of=row["multiple_of"] if is_sale else None,
+            requires_paid_membership=bool(row["store_requires_paid_membership"]) or bool(row["sale_requires_paid_membership"]),
+            requires_loyalty_card=bool(row["sale_requires_loyalty_card"]),
+        )
+
+    def _is_sale_active(self, row: sqlite3.Row) -> bool:
+        start_date = row["start_date"]
+        if start_date is None:
+            return False
+        now = dt.datetime.now(dt.timezone.utc)
+        start = self._parse_temporal_value(start_date)
+        expiration = self._parse_temporal_value(row["expiration_date"]) if row["expiration_date"] is not None else None
+        if isinstance(start, dt.date) and not isinstance(start, dt.datetime):
+            if start > now.date():
+                return False
+        elif isinstance(start, dt.datetime):
+            if self._coerce_utc(start) > now:
+                return False
+        if expiration is None:
+            return True
+        if isinstance(expiration, dt.date) and not isinstance(expiration, dt.datetime):
+            return expiration >= now.date()
+        return self._coerce_utc(expiration) >= now
+
+    def _coerce_utc(self, value: dt.datetime) -> dt.datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=dt.timezone.utc)
+        return value.astimezone(dt.timezone.utc)
+
+    def _parse_temporal_value(self, value: str) -> dt.date | dt.datetime:
+        if "T" not in value:
+            return dt.date.fromisoformat(value)
+        return dt.datetime.fromisoformat(value)
+
+    def _per_purchase_quantity(
+        self,
+        row: sqlite3.Row,
+        desired_quantity_unit: ProductUnit,
+    ) -> Optional[CanonicalQuantity]:
+        observed_unit = ProductUnit(int(row["quantity_unit"]))
+        if desired_quantity_unit == ProductUnit.EA:
+            if bool(row["is_variable_weight"]):
+                return CanonicalQuantity(dimension="count", quantity=1.0)
+            return CanonicalQuantity(
+                dimension="count",
+                quantity=float(max(1, int(row["pack_count"]) if row["pack_count"] is not None else 1)),
+            )
+        base_quantity = float(row["net_quantity"])
+        if not bool(row["is_variable_weight"]):
+            base_quantity *= max(1, int(row["pack_count"]) if row["pack_count"] is not None else 1)
+        canonical_quantity = self._to_canonical_quantity(base_quantity, observed_unit)
+        desired_canonical = self._to_canonical_quantity(1.0, desired_quantity_unit)
+        if canonical_quantity is None or desired_canonical is None:
+            return None
+        if canonical_quantity.dimension != desired_canonical.dimension:
+            return None
+        return canonical_quantity
+
+    def _unit_dimensions(self, unit: ProductUnit) -> set[str]:
+        canonical_quantity = self._to_canonical_quantity(quantity=1.0, unit=unit)
+        if canonical_quantity is None:
+            return set()
+        return {canonical_quantity.dimension}
+
+    def _to_canonical_quantity(
+        self,
+        quantity: float,
+        unit: ProductUnit,
+    ) -> Optional[CanonicalQuantity]:
+        if unit == ProductUnit.EA:
+            return CanonicalQuantity(dimension="count", quantity=quantity)
+        factor = self._mass_factor(unit)
+        if factor is not None:
+            return CanonicalQuantity(dimension="mass", quantity=quantity * factor)
+        factor = self._volume_factor(unit)
+        if factor is not None:
+            return CanonicalQuantity(dimension="volume", quantity=quantity * factor)
         return None
 
     def _mass_factor(self, unit: ProductUnit) -> Optional[float]:
@@ -599,8 +1219,10 @@ class GroceryRepository:
             return 4.92892159375
         if unit == ProductUnit.TBSP:
             return 14.78676478125
-        if unit == ProductUnit.OZ:
+        if unit == ProductUnit.FL_OZ:
             return 29.5735295625
+        if unit == ProductUnit.CUP:
+            return 236.5882365
         return None
 
     def _resolve_product_id(
@@ -766,14 +1388,25 @@ class GroceryRepository:
 
         cursor = connection.execute(
             """
-            INSERT INTO sales(limit_quantity, expiration_date, start_date, minimum_quantity)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO sales(
+                limit_quantity,
+                expiration_date,
+                start_date,
+                minimum_quantity,
+                multiple_of,
+                requires_paid_membership,
+                requires_loyalty_card
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 sale.limit_quantity,
                 sale.expiration_date,
                 sale.start_date,
                 sale.minimum_quantity,
+                sale.multiple_of,
+                int(sale.requires_paid_membership),
+                int(sale.requires_loyalty_card),
             ),
         )
         return int(cursor.lastrowid)
@@ -814,6 +1447,9 @@ class GroceryRepository:
             ),
             start_date=dt.datetime.fromisoformat(row["start_date"]),
             minimum_quantity=row["minimum_quantity"],
+            multiple_of=row["multiple_of"],
+            requires_paid_membership=bool(row["sale_requires_paid_membership"]),
+            requires_loyalty_card=bool(row["sale_requires_loyalty_card"]),
         )
 
     def _normalize_categories(self, raw: Optional[str]) -> Optional[str]:

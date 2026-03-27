@@ -1,0 +1,299 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath, amssymb, mathtools}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+
+\title{Price Estimation Logic and Equations}
+\author{Aaron Jencks}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Definitions}
+
+I know this is not the correct formal definitions for predicate logic, but it's helping me layout my thoughts onto paper so that I can get the equations correct. In this case each section is a true statement and if the section statement is true then the section content equation is used. I need for a lot of predicates and variables for this:
+
+\subsection{Variables}
+
+\begin{itemize}
+	\item $O_r$: Requested Optimization
+	\item $Q_r$: Requested Quantity
+	\item $U_r$: Requested Quantity Unit
+	\item $V_p$: Preferred Variant
+	\item $V_m$: Matched Variant
+\end{itemize}
+
+\subsection{Predicates/Functions}
+
+\begin{itemize}
+	\item $W(x)$: Variant $x$ is variable weight
+	\item $ID(x)$: Returns the ID of the variant $x$
+	\item $C(x)$: Unit $x$ is count/item based
+	\item $Cheap(x)$: Requested optimization is cheapest quantity
+	\item $Pack(x)$: Returns the pack count of the variant $x$
+	\item $Net(x)$: Returns the net quantity of the variant $x$
+	\item $Unit(x)$: Returns the net quantity unit of the variant $x$
+	\item $ConvertUnit(x, u_x, u_t)$: Converts the quantity $x$ from unit $u_x$ to unit $u_t$
+	\item $Conv(x, y)$: There exists a conversion from unit $x$ to unit $y$ and vice versa.
+\end{itemize}
+
+\newpage
+
+\section{$Cheap(O_r)\wedge C(U_r) \wedge \neg\exists V_p \wedge \neg\exists V_m$}
+
+Cheapest per unit, count based request unit, no preferred variant, no match variant. There is no possible price for this.
+
+\section{$Cheap(O_r)\wedge C(U_r) \wedge \neg\exists V_p \wedge \neg W(V_m)$}
+
+\begin{align}
+PackCount_m &=\left\lceil \frac{Q_r}{Pack(V_m)} \right\rceil \\
+P_{est} &=PackCount_m\times Price(V_m)
+\end{align}
+
+\section{$Cheap(O_r)\wedge C(U_r) \wedge \neg\exists V_p \wedge W(V_m) \wedge\neg Conv(U_r, Unit(V_m))$}
+
+If there is no conversion from count to unit, then we can just assume 1:1 conversion rate. We also assume and enforce in the app that the pack count for any variable weight variant will be 1.
+
+\begin{align}
+	PackCount_m &=\left\lceil \frac{Q_r}{Net(V_m)} \right\rceil \\
+	P_{est} &=PackCount_m\times Price(V_m)
+\end{align}
+
+\section{$Cheap(O_r)\wedge C(U_r) \wedge \neg\exists V_p \wedge W(V_m) \wedge Conv(U_r, Unit(V_m))$}
+
+\begin{align}
+	UnitCount_m &=ConvertUnit(Q_r, U_r, Unit(V_m)) \\
+	PackCount_m &=\left\lceil \frac{UnitCount_m}{Net(V_m)} \right\rceil \\
+	P_{est} &=PackCount_m\times Price(V_m)
+\end{align}
+
+\section{$Cheap(O_r)\wedge C(U_r) \wedge \exists V_p \wedge\neg W(V_p) \wedge\neg W(V_m) \wedge ID(V_p)\neq ID(V_m)$}
+
+\subsection{$\neg Conv(U_r, Unit(V_p)) \vee \neg Conv(U_r, Unit(V_m)) \vee\neg Conv(Unit(V_p), Unit(V_m))$}
+
+We can't do anything in this case. This case would arise if somebody asked for 5 apples, but nobody had stored any kind of conversion rate for a single apple before and $Unit(V_p)$ was in pounds, but $Unit(V_m)$ was in fluid ounces. There is no way to convert from pounds to fluid ounces without density information, so we just need to barf here and tell the user that it's not possible.
+
+\subsection{$Conv(U_r, Unit(V_p)) \wedge Conv(U_r, Unit(V_m))$}
+
+There is a common unit.
+
+\begin{align}
+	UnitCount_r &= Q_r\times Net(V_p) \\
+	UnitCount_{rm} &= ConvertUnit(UnitCount_r, Unit(V_p), Unit(V_m)) \\
+	UnitCount_m &= Net(V_m)\times Pack(V_m)\\
+	PackCount_m &=\left\lceil \frac{UnitCount_{rm}}{UnitCount_m} \right\rceil \\
+	P_{est} &=PackCount_m\times Price(V_m)
+\end{align}
+
+\section{$Cheap(O_r)\wedge C(U_r) \wedge \exists V_p \wedge\neg W(V_p) \wedge\neg W(V_m) \wedge ID(V_p)=ID(V_m)$}
+
+\begin{equation}
+P_{est}=\left\lceil\frac{Q_r}{Pack(V_m)}\right\rceil\times Price(V_m)
+\end{equation}
+
+\section{$Cheap(O_r)\wedge C(U_r) \wedge \exists V_p \wedge\neg W(V_p) \wedge W(V_m)$}
+
+\subsection{$\neg Conv(Unit(V_p), Unit(V_m))$}
+
+Nothing we can do
+
+\subsection{$Conv(Unit(V_p), Unit(V_m))$}
+
+\begin{align}
+	UnitCount_r &= Q_r\times Net(V_p) \\
+	UnitCount_{rm} &= ConvertUnit(UnitCount_r, Unit(V_p), Unit(V_m)) \\
+	MinUnitCount_m &= Net(V_m) \\
+	UnitCount_m &= \left\lceil\frac{UnitCount_{rm}}{MinUnitCount_m}\right\rceil\times MinUnitCount_m \\
+	P_{est} &= UnitCount_m\times Price(V_m)
+\end{align}
+
+\section{$Cheap(O_r)\wedge C(U_r)\wedge\exists V_p\wedge W(V_p)\wedge\neg W(V_m)$}
+
+\subsection{$\neg Conv(U_r,Unit(V_p))$}
+
+Assume a 1:1 rate.
+
+\begin{equation}
+	UnitCount_r=Q_r
+\end{equation}
+
+\subsection{$\neg Conv(Unit(V_p), Unit(V_m))$}
+
+Nothing we can do here
+
+\subsection{$Conv(Unit(V_p), Unit(V_m))$}
+
+\begin{align}
+	UnitCount_r &= ConvertUnit(Q_r, U_r, Unit(V_p)) \\
+	UnitCount_{rm} &= ConvertUnit(UnitCount_r, Unit(V_p), Unit(V_m)) \\
+	PackCount_m &=\frac{UnitCount_{rm}}{Net(V_m)} \\
+	VariantPackCount_m &= \left\lceil\frac{PackCount_m}{Pack(V_m)}\right\rceil \\
+	P_{est} &= VariantPackCount_m\times Price(V_m)
+\end{align}
+
+\section{$Cheap(O_r)\wedge C(U_r)\wedge\exists V_p\wedge W(V_p)\wedge W(V_m)\wedge ID(V_p)\neg ID(V_m)$}
+
+\subsection{$\neg Conv(U_r,Unit(V_p))$}
+
+Assume a 1:1 rate.
+
+\begin{equation}
+	UnitCount_r=Q_r
+\end{equation}
+
+\subsection{$\neg Conv(Unit(V_p), Unit(V_m))$}
+
+Nothing we can do here
+
+\subsection{$Conv(Unit(V_p), Unit(V_m))$}
+
+\begin{align}
+	UnitCount_r &= ConvertUnit(Q_r, U_r, Unit(V_p)) \\
+	UnitCount_{rm} &= ConvertUnit(UnitCount_r, Unit(V_p), Unit(V_m)) \\
+	PackCount_m &= \left\lceil\frac{UnitCount_{rm}}{Net(V_m)}\right\rceil\\
+	P_{est} &= PackCount_m\times Price(V_m)
+\end{align}
+
+\section{$Cheap(O_r)\wedge C(U_r)\wedge\exists V_p\wedge W(V_p)\wedge W(V_m)\wedge ID(V_p)=ID(V_m)$}
+
+\subsection{$\neg Conv(U_r, Unit(V_m))$}
+
+Assume 1:1 rate.
+
+\begin{equation}
+	UnitCount_r=Q_r
+\end{equation}
+
+\subsection{All Other Cases}
+
+\begin{align}
+	UnitCount_r &= ConvertUnit(Q_r, U_r, Unit(V_m)) \\
+	PackCount_m &= \left\lceil\frac{UnitCount_r}{Net(V_m)}\right\rceil\\
+	P_{est} &= PackCount_m\times Price(V_m)
+\end{align}
+
+\section{$Cheap(O_r)\wedge\neg C(V_r)\wedge\neg\exists V_p\wedge\neg W(V_m)$}
+
+\subsection{$\neg Conv(U_r, Unit(V_m))$}
+
+We can't do anything here. We can't make assumptions when the request unit is not a count.
+
+\subsection{$Conv(U_r, Unit(V_m))$}
+
+\begin{align}
+	UnitCount_m &= ConvertUnit(Q_r,U_r,Unit(V_m))\\
+	ItemCount_m &= \frac{UnitCount_m}{Net(V_m)}\\
+	PackCount_m &= \left\lceil\frac{ItemCount_m}{Pack(V_m)}\right\rceil\\
+	P_{est} &= PackCount_m\times Price(V_m)
+\end{align}
+
+\section{$Cheap(O_r)\wedge\neg C(V_r)\wedge\neg\exists V_p\wedge W(V_m)$}
+
+\subsection{$\neg Conv(U_r, Unit(V_m))$}
+
+We can't do anything here. We can't make assumptions when the request unit is not a count.
+
+\subsection{$Conv(U_r, Unit(V_m))$}
+
+\begin{align}
+	UnitCount_m &= ConvertUnit(Q_r,U_r,Unit(V_m))\\
+	PackCount_m &= \left\lceil\frac{UnitCount_m}{Net(V_m)}\right\rceil\\
+	P_{est} &= PackCount_m\times Price(V_m)
+\end{align}
+
+\section{$Cheap(O_r)\wedge\neg C(V_r)\wedge\exists V_p\wedge\neg W(V_p)\wedge\neg W(V_m)\wedge ID(V_p)\neq ID(V_m)$}
+
+\subsection{$\neg Conv(U_r, Unit(Vp))\vee\neg Conv(Unit(V_p), Unit(V_m))$}
+
+We can't assume any way to convert $Unit(V_p)\rightarrow Unit(V_m)$ and if we can't convert $U_r\rightarrow Unit(V_p)$ then we can't assume that any conversion for $U_r\rightarrow Unit(V_m)$ is valid without going through $V_p$ first. Nothing we can do here.
+
+\subsection{$Conv(U_r, Unit(Vp))\wedge Conv(Unit(V_p), Unit(V_m))$}
+
+\begin{align}
+	UnitCount_r &= ConvertUnit(Q_r, U_r, Unit(V_p))\\
+	UnitCount_m &= ConvertUnit(UnitCount_r, Unit(V_p), Unit(V_m))\\
+	ItemCount_m &= \frac{UnitCount_m}{Net(V_m)}\\
+	PackCount_m &= \left\lceil\frac{ItemCount_m}{Pack(V_m)}\right\rceil\\
+	P_{est} &= PackCount_m\times Price(V_m)
+\end{align}
+
+\section{$Cheap(O_r)\wedge\neg C(V_r)\wedge\exists V_p\wedge\neg W(V_p)\wedge\neg W(V_m)\wedge ID(V_p)=ID(V_m)$}
+
+\subsection{$\neg Conv(U_r, Unit(Vp))$}
+
+We can't do anything here. We can't make assumptions when the request unit is not a count.
+
+\subsection{$Conv(U_r, Unit(Vp))$}
+
+\begin{align}
+	UnitCount_m &= ConvertUnit(Q_r, U_r, Unit(V_m))\\
+	ItemCount_m &= \frac{UnitCount_m}{Net(V_m)}\\
+	PackCount_m &= \left\lceil\frac{ItemCount_m}{Pack(V_m)}\right\rceil\\
+	P_{est} &= PackCount_m\times Price(V_m)
+\end{align}
+
+\section{$Cheap(O_r)\wedge\neg C(V_r)\wedge\exists V_p\wedge\neg W(V_p)\wedge W(V_m)$}
+
+\subsection{$\neg Conv(U_r, Unit(Vp))\vee\neg Conv(Unit(V_p), Unit(V_m))$}
+
+We can't assume any way to convert $Unit(V_p)\rightarrow Unit(V_m)$ and if we can't convert $U_r\rightarrow Unit(V_p)$ then we can't assume that any conversion for $U_r\rightarrow Unit(V_m)$ is valid without going through $V_p$ first. Nothing we can do here.
+
+\subsection{$Conv(U_r, Unit(Vp))\wedge Conv(Unit(V_p), Unit(V_m))$}
+
+\begin{align}
+	UnitCount_r &= ConvertUnit(Q_r, U_r, Unit(V_p))\\
+	UnitCount_m &= ConvertUnit(UnitCount_r, Unit(V_p), Unit(V_m))\\
+	PackCount_m &= \left\lceil\frac{UnitCount_m}{Net(V_m)}\right\rceil\\
+	P_{est} &= PackCount_m\times Price(V_m)
+\end{align}
+
+\section{$Cheap(O_r)\wedge\neg C(V_r)\wedge\exists V_p\wedge W(V_p)\wedge\neg W(V_m)$}
+
+\subsection{$\neg Conv(U_r, Unit(Vp))\vee\neg Conv(Unit(V_p), Unit(V_m))$}
+
+We can't assume any way to convert $Unit(V_p)\rightarrow Unit(V_m)$ and if we can't convert $U_r\rightarrow Unit(V_p)$ then we can't assume that any conversion for $U_r\rightarrow Unit(V_m)$ is valid without going through $V_p$ first. Nothing we can do here.
+
+\subsection{$Conv(U_r, Unit(Vp))\wedge Conv(Unit(V_p), Unit(V_m))$}
+
+\begin{align}
+	UnitCount_r &= ConvertUnit(Q_r, U_r, Unit(V_p))\\
+	UnitCount_m &= ConvertUnit(UnitCount_r, Unit(V_p), Unit(V_m))\\
+	ItemCount_m &= \frac{UnitCount_m}{Net(V_m)}\\
+	PackCount_m &= \left\lceil\frac{ItemCount_m}{Pack(V_m)}\right\rceil\\
+	P_{est} &= PackCount_m\times Price(V_m)
+\end{align}
+
+\section{$Cheap(O_r)\wedge\neg C(V_r)\wedge\exists V_p\wedge W(V_p)\wedge W(V_m)\wedge ID(V_p)\neq ID(V_m)$}
+
+\subsection{$\neg Conv(U_r, Unit(Vp))\vee\neg Conv(Unit(V_p), Unit(V_m))$}
+
+We can't assume any way to convert $Unit(V_p)\rightarrow Unit(V_m)$ and if we can't convert $U_r\rightarrow Unit(V_p)$ then we can't assume that any conversion for $U_r\rightarrow Unit(V_m)$ is valid without going through $V_p$ first. Nothing we can do here.
+
+\subsection{$Conv(U_r, Unit(Vp))\wedge Conv(Unit(V_p), Unit(V_m))$}
+
+\begin{align}
+	UnitCount_r &= ConvertUnit(Q_r, U_r, Unit(V_p))\\
+	UnitCount_m &= ConvertUnit(UnitCount_r, Unit(V_p), Unit(V_m))\\
+	PackCount_m &= \left\lceil\frac{UnitCount_m}{Pack(V_m)}\right\rceil\\
+	P_{est} &= PackCount_m\times Price(V_m)
+\end{align}
+
+\section{$Cheap(O_r)\wedge\neg C(V_r)\wedge\exists V_p\wedge W(V_p)\wedge W(V_m)\wedge ID(V_p)=ID(V_m)$}
+
+\subsection{$\neg Conv(U_r, Unit(Vp))$}
+
+We can't do anything here. We can't make assumptions when the request unit is not a count.
+
+\subsection{$Conv(U_r, Unit(Vp))$}
+
+\begin{align}
+	UnitCount_m &= ConvertUnit(Q_r, U_r, Unit(V_m))\\
+	PackCount_m &= \left\lceil\frac{UnitCount_m}{Pack(V_m)}\right\rceil\\
+	P_{est} &= PackCount_m\times Price(V_m)
+\end{align}
+
+\end{document}

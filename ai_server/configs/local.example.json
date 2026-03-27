@@ -5,6 +5,15 @@
     "val_manifest": "/absolute/path/to/val.jsonl",
     "image_root": "/absolute/path/to/images"
   },
+  "model": {
+    "backbone": "mobilenet_v3_small",
+    "pretrained": true
+  },
+  "wandb": {
+    "enabled": false,
+    "entity": "your-wandb-entity",
+    "project": "price-tag-ai"
+  },
   "train": {
     "output_dir": "outputs/local-run",
     "batch_size": 16

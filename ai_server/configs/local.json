@@ -4,8 +4,17 @@
     "val_manifest": "/workspace/github/grocery.io/ai_server/data/val.jsonl",
     "image_root": "/workspace/github/grocery.io/ai_server/data/images"
   },
+  "model": {
+    "backbone": "mobilenet_v3_small",
+    "pretrained": true
+  },
   "train": {
     "output_dir": "/workspace/github/grocery.io/ai_server/outputs/local-run",
     "batch_size": 16
+  },
+  "wandb": {
+    "enabled": true,
+    "entity": "aaronjencks-personal",
+    "project": "grocery.io-price-tag-ai"
   }
 }

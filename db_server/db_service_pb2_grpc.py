@@ -212,6 +212,78 @@ class CatalogService(object):
             _registered_method=True)
 
 
+class StoreServiceStub(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.FindStoreByAddress = channel.unary_unary(
+                '/grocery.database.StoreService/FindStoreByAddress',
+                request_serializer=db__service__pb2.StoreLookupRequest.SerializeToString,
+                response_deserializer=db__service__pb2.StoreLookupResponse.FromString,
+                _registered_method=True)
+
+
+class StoreServiceServicer(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def FindStoreByAddress(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+
+def add_StoreServiceServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+            'FindStoreByAddress': grpc.unary_unary_rpc_method_handler(
+                    servicer.FindStoreByAddress,
+                    request_deserializer=db__service__pb2.StoreLookupRequest.FromString,
+                    response_serializer=db__service__pb2.StoreLookupResponse.SerializeToString,
+            ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+            'grocery.database.StoreService', rpc_method_handlers)
+    server.add_generic_rpc_handlers((generic_handler,))
+    server.add_registered_method_handlers('grocery.database.StoreService', rpc_method_handlers)
+
+
+ # This class is part of an EXPERIMENTAL API.
+class StoreService(object):
+    """Missing associated documentation comment in .proto file."""
+
+    @staticmethod
+    def FindStoreByAddress(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/grocery.database.StoreService/FindStoreByAddress',
+            db__service__pb2.StoreLookupRequest.SerializeToString,
+            db__service__pb2.StoreLookupResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+
 class ObservationServiceStub(object):
     """Missing associated documentation comment in .proto file."""
 

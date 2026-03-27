@@ -7,11 +7,26 @@
     "image_root": "data/images",
     "val_ratio": 0.2,
     "min_train_samples": 1,
-    "num_workers": 4
+    "num_workers": 4,
+    "augmentation": {
+      "enabled": true,
+      "rotation_degrees": 7.0,
+      "brightness": 0.15,
+      "contrast": 0.15,
+      "blur_probability": 0.2,
+      "blur_kernel_size": 3,
+      "blur_sigma_min": 0.1,
+      "blur_sigma_max": 1.25,
+      "perspective_probability": 0.2,
+      "perspective_distortion_scale": 0.1,
+      "noise_probability": 0.25,
+      "noise_std": 0.02
+    }
   },
   "model": {
-    "backbone": "resnet18",
-    "pretrained": false,
+    "backbone": "mobilenet_v3_small",
+    "hf_model_name": "google/vit-base-patch16-224-in21k",
+    "pretrained": true,
     "image_size": 224,
     "dropout": 0.1
   },
@@ -24,11 +39,16 @@
     "name": "cosine",
     "min_lr": 0.000001
   },
+  "wandb": {
+    "enabled": false,
+    "entity": "",
+    "project": ""
+  },
   "train": {
     "seed": 1337,
     "device": "cuda",
     "batch_size": 32,
-    "epochs": 50,
+    "epochs": 300,
     "output_dir": "outputs/price-tag-baseline",
     "log_every_n_steps": 0,
     "save_every_n_epochs": 1

@@ -1,4 +1,5 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
+accelerate
 cascade-config
 fastapi
 grpcio
@@ -15,3 +16,4 @@ torch
 tqdm
 transformers
 uvicorn
+wandb

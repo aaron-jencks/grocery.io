@@ -27,7 +27,7 @@ from price_tag_ai.dataset import PriceTagDatasetStore, PriceTagRecord, list_imag
 from price_tag_ai.openai_prefill import OpenAIPrefillService
 
 
-UNITS = ["", "OZ", "LB", "ITEM", "KG", "G", "LIT", "ML", "GAL", "QT", "PT", "TSP", "TBSP"]
+UNITS = ["", "OZ", "LB", "ITEM", "KG", "G", "LIT", "ML", "GAL", "QT", "PT", "TSP", "TBSP", "FL_OZ", "CUP"]
 IMAGE_ROTATION_DEGREES = 90
 
 

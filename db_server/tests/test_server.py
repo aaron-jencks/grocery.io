@@ -95,6 +95,42 @@ class GroceryServicerTest(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, grpc.StatusCode.INVALID_ARGUMENT)
 
+    def test_find_store_by_address_returns_existing_store(self) -> None:
+        self.servicer.CreatePriceObservation(
+            db_service_pb2.PriceObservationRequest(
+                store=db_service_pb2.StoreInfo(
+                    storeAddress="123 Main St",
+                    location=db_service_pb2.Coordinate(latitude=1.0, longitude=2.0),
+                    storeName="Costco",
+                    requiresPaidMembership=True,
+                ),
+                upc=db_service_pb2.UpcInfo(
+                    upc="123456",
+                    productName="Milk",
+                    variantLabel="Whole",
+                    packCount=1,
+                    netQuantity=64.0,
+                    quantityUnit=db_service_pb2.OZ,
+                    isVariableWeight=False,
+                ),
+                priceTotal=4.99,
+                observedAt="2026-03-03T10:00:00+00:00",
+                isSale=False,
+            ),
+            self.context,
+        )
+
+        response = self.servicer.FindStoreByAddress(
+            db_service_pb2.StoreLookupRequest(storeAddress="123 Main St"),
+            self.context,
+        )
+
+        self.assertTrue(response.found)
+        self.assertTrue(response.HasField("store"))
+        self.assertEqual("Costco", response.store.storeName)
+        self.assertEqual(1.0, response.store.location.latitude)
+        self.assertTrue(response.store.requiresPaidMembership)
+
     def test_sale_requires_sale_info(self) -> None:
         with self.assertRaises(RpcAbort) as raised:
             self.servicer.CreatePriceObservation(
@@ -320,12 +356,14 @@ class GroceryServicerTest(unittest.TestCase):
                         itemId=1,
                         productName="milk",
                         desiredCount=1,
+                        desiredQuantityUnit=db_service_pb2.GAL,
                         comparisonMode=db_service_pb2.BEST_UNIT_VALUE,
                     ),
                     db_service_pb2.GroceryListOptimizationItem(
                         itemId=2,
                         productName="unknown product",
                         desiredCount=1,
+                        desiredQuantityUnit=db_service_pb2.EA,
                         comparisonMode=db_service_pb2.CHEAPEST_PRICE,
                     ),
                 ]
@@ -342,6 +380,82 @@ class GroceryServicerTest(unittest.TestCase):
             response.matches[0].comparisonMode,
         )
         self.assertEqual(2, response.unmatched[0].itemId)
+
+    def test_optimize_grocery_list_filters_membership_eligible_prices(self) -> None:
+        self.servicer.CreatePriceObservation(
+            db_service_pb2.PriceObservationRequest(
+                store=db_service_pb2.StoreInfo(
+                    storeAddress="123 Main St",
+                    location=db_service_pb2.Coordinate(latitude=1.0, longitude=2.0),
+                    storeName="Members Store",
+                    requiresPaidMembership=True,
+                ),
+                upc=db_service_pb2.UpcInfo(
+                    upc="201010",
+                    productName="milk",
+                    variantLabel="half gallon",
+                    packCount=1,
+                    netQuantity=0.5,
+                    quantityUnit=db_service_pb2.GAL,
+                    isVariableWeight=False,
+                ),
+                priceTotal=2.5,
+                observedAt="2026-03-03T10:00:00+00:00",
+                isSale=True,
+                saleInfo=db_service_pb2.SaleInfo(
+                    startDate="2026-03-01T00:00:00+00:00",
+                    multipleOf=3,
+                    requiresPaidMembership=True,
+                    requiresLoyaltyCard=True,
+                ),
+            ),
+            self.context,
+        )
+        self.servicer.CreatePriceObservation(
+            db_service_pb2.PriceObservationRequest(
+                store=db_service_pb2.StoreInfo(
+                    storeAddress="500 Oak St",
+                    location=db_service_pb2.Coordinate(latitude=2.0, longitude=3.0),
+                    storeName="Open Store",
+                ),
+                upc=db_service_pb2.UpcInfo(
+                    upc="201011",
+                    productName="milk",
+                    variantLabel="half gallon",
+                    packCount=1,
+                    netQuantity=0.5,
+                    quantityUnit=db_service_pb2.GAL,
+                    isVariableWeight=False,
+                ),
+                priceTotal=3.5,
+                observedAt="2026-03-03T11:00:00+00:00",
+                isSale=False,
+            ),
+            self.context,
+        )
+
+        response = self.servicer.OptimizeGroceryList(
+            db_service_pb2.OptimizeGroceryListRequest(
+                items=[
+                    db_service_pb2.GroceryListOptimizationItem(
+                        itemId=1,
+                        productName="milk",
+                        desiredCount=1,
+                        desiredQuantityUnit=db_service_pb2.GAL,
+                        comparisonMode=db_service_pb2.CHEAPEST_PRICE,
+                    ),
+                ],
+                allowPaidMembershipRequired=False,
+                allowLoyaltyCardRequired=False,
+            ),
+            self.context,
+        )
+
+        self.assertEqual(1, len(response.matches))
+        self.assertEqual("201011", response.matches[0].variant.upc)
+        self.assertFalse(response.matches[0].store.requiresPaidMembership)
+        self.assertFalse(response.matches[0].requiresPaidMembership)
+        self.assertFalse(response.matches[0].requiresLoyaltyCard)
 
     def test_optimize_grocery_list_rejects_blank_product_name(self) -> None:
         with self.assertRaises(RpcAbort) as raised:
@@ -460,8 +574,41 @@ class GroceryServicerTest(unittest.TestCase):
             self.context,
         ).variants
         self.assertEqual(1, len(variants))
-        self.assertTrue(variants[0].upc.startswith("99"))
-        self.assertEqual(12, len(variants[0].upc))
+        self.assertTrue(variants[0].upc.startswith("vw:"))
+        self.assertGreaterEqual(len(variants[0].upc), 7)
+
+    def test_no_upc_available_without_variable_weight_is_accepted_with_synthetic_upc(self) -> None:
+        response = self.servicer.CreatePriceObservation(
+            db_service_pb2.PriceObservationRequest(
+                store=db_service_pb2.StoreInfo(
+                    storeAddress="123 Main St",
+                    location=db_service_pb2.Coordinate(latitude=1.0, longitude=2.0),
+                    storeName="Store A",
+                ),
+                upc=db_service_pb2.UpcInfo(
+                    upc="",
+                    productName="cilantro",
+                    variantLabel="loose",
+                    packCount=1,
+                    netQuantity=1.0,
+                    quantityUnit=db_service_pb2.EA,
+                    isVariableWeight=False,
+                    noUpcAvailable=True,
+                ),
+                priceTotal=1.29,
+                observedAt="2026-03-03T10:00:00+00:00",
+                isSale=False,
+            ),
+            self.context,
+        )
+
+        self.assertTrue(response.HasField("observationId"))
+        variants = self.servicer.ListVariantsForProduct(
+            db_service_pb2.ListVariantsForProductRequest(productName="cilantro"),
+            self.context,
+        ).variants
+        self.assertEqual(1, len(variants))
+        self.assertTrue(variants[0].upc.startswith("noupc:"))
 
     def test_non_variable_weight_without_upc_is_rejected(self) -> None:
         with self.assertRaises(RpcAbort) as raised:

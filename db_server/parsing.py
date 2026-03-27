@@ -5,6 +5,9 @@ from pathlib import Path
 from typing import Protocol
 import os
 import io
+import queue
+import threading
+import traceback
 
 from db_server.domain.upc import ProductUnit
 
@@ -25,6 +28,15 @@ class ParsedPriceTag:
     quantity_unit: ProductUnit | None = None
     is_variable_weight: bool = False
     message: str | None = None
+
+
+@dataclass
+class _ParseTask:
+    image_jpeg: bytes
+    image_filename: str | None
+    done: threading.Event
+    result: ParsedPriceTag | None = None
+    error: Exception | None = None
 
 
 class PriceTagParser(Protocol):
@@ -49,28 +61,74 @@ class FallbackPriceTagParser:
 
 class TorchCheckpointPriceTagParser:
     def __init__(self, checkpoint_path: Path):
+        self._checkpoint_path = checkpoint_path
         project_root = Path(__file__).resolve().parent.parent
         ai_root = project_root / "ai_server"
         import sys
         if str(ai_root) not in sys.path:
             sys.path.insert(0, str(ai_root))
-        from price_tag_ai.train import PriceTagModel, UNITS
+        from price_tag_ai.train import UNITS
 
         self._units: list[str] = list(UNITS)
         self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self._task_queue: queue.Queue[_ParseTask | None] = queue.Queue()
+        self._checkpoint_mtime_ns: int | None = None
+        self._model = None
+        self._forward_image_key = "images"
+        self._transform = None
+        self._load_generation = 0
+        self._load_model()
+        self._worker = threading.Thread(
+            target=self._worker_loop,
+            name="price-tag-parser",
+            daemon=True,
+        )
+        self._worker.start()
 
-        checkpoint = torch.load(checkpoint_path, map_location=self._device)
-        model_config = checkpoint.get("config", {}).get("model", checkpoint.get("config", {}))
+    def _load_model(self) -> None:
+        from price_tag_ai.config import AppConfig
+        from price_tag_ai.train import PriceTagModel
+        from price_tag_ai.train_hf import HFPriceTagModel
+
+        checkpoint = torch.load(self._checkpoint_path, map_location=self._device)
+        checkpoint_config = checkpoint.get("config", {})
+        model_config = checkpoint_config.get("model", checkpoint_config)
         backbone = str(model_config.get("backbone", "resnet18"))
         dropout = float(model_config.get("dropout", 0.1))
         image_size = int(model_config.get("image_size", 224))
-        self._model = PriceTagModel(
-            backbone=backbone,
-            dropout=dropout,
-            pretrained=False,
-        ).to(self._device)
-        self._model.load_state_dict(checkpoint["model_state_dict"])
-        self._model.eval()
+        trainer_type = str(checkpoint.get("trainer_type", "")).lower()
+        state_dict = checkpoint["model_state_dict"]
+        is_hf_checkpoint = (
+            trainer_type == "hf"
+            or any(key.startswith("encoder.embeddings.") or key.startswith("encoder.encoder.") for key in state_dict)
+        )
+
+        if is_hf_checkpoint:
+            app_config = AppConfig.model_validate(checkpoint_config)
+            model = HFPriceTagModel(
+                config=app_config,
+                binary_pos_weights={
+                    "is_variable_weight": 1.0,
+                    "is_ambiguous": 1.0,
+                    "is_unparsable": 1.0,
+                    "upc_present": 1.0,
+                },
+                load_pretrained_encoder=False,
+            ).to(self._device)
+            forward_image_key = "pixel_values"
+            allow_compile = False
+        else:
+            model = PriceTagModel(
+                backbone=backbone,
+                dropout=dropout,
+                pretrained=False,
+            ).to(self._device)
+            forward_image_key = "images"
+            allow_compile = True
+        model.load_state_dict(state_dict)
+        model.eval()
+        self._model = self._maybe_compile_model(model, allow_compile=allow_compile)
+        self._forward_image_key = forward_image_key
         self._transform = transforms.Compose(
             [
                 transforms.Resize((image_size, image_size)),
@@ -81,16 +139,55 @@ class TorchCheckpointPriceTagParser:
                 ),
             ]
         )
+        self._checkpoint_mtime_ns = self._checkpoint_path.stat().st_mtime_ns
+        self._load_generation += 1
 
     def parse(self, image_jpeg: bytes, image_filename: str | None = None) -> ParsedPriceTag:
         if not image_jpeg:
             raise ValueError("imageJpeg is required")
+        task = _ParseTask(
+            image_jpeg=image_jpeg,
+            image_filename=image_filename,
+            done=threading.Event(),
+        )
+        self._task_queue.put(task)
+        task.done.wait()
+        if task.error is not None:
+            raise task.error
+        assert task.result is not None
+        return task.result
+
+    def _worker_loop(self) -> None:
+        while True:
+            task = self._task_queue.get()
+            if task is None:
+                return
+            try:
+                self._reload_if_needed()
+                task.result = self._parse_impl(task.image_jpeg, task.image_filename)
+            except Exception as exc:
+                task.error = exc
+            finally:
+                task.done.set()
+
+    def _reload_if_needed(self) -> None:
+        current_mtime_ns = self._checkpoint_path.stat().st_mtime_ns
+        if self._checkpoint_mtime_ns == current_mtime_ns:
+            return
+        self._load_model()
+
+    def _parse_impl(self, image_jpeg: bytes, image_filename: str | None = None) -> ParsedPriceTag:
         _ = image_filename
+        assert self._transform is not None
+        assert self._model is not None
         image = Image.open(io.BytesIO(image_jpeg)).convert("RGB")
         tensor = self._transform(image).unsqueeze(0).to(self._device)
 
-        with torch.no_grad():
-            outputs = self._model(tensor)
+        with torch.inference_mode():
+            if self._forward_image_key == "pixel_values":
+                outputs = self._model(pixel_values=tensor)
+            else:
+                outputs = self._model(tensor)
 
         unit_idx = int(outputs["unit_logits"].argmax(dim=1).item())
         unit = self._to_product_unit(self._units[unit_idx] if 0 <= unit_idx < len(self._units) else None)
@@ -153,6 +250,22 @@ class TorchCheckpointPriceTagParser:
             return ProductUnit[normalized]
         except KeyError:
             return None
+
+    def _maybe_compile_model(self, model: torch.nn.Module, allow_compile: bool) -> torch.nn.Module:
+        if not allow_compile:
+            return model
+        compile_enabled = os.environ.get("GROCERY_AI_COMPILE", "1").strip().lower()
+        if compile_enabled in {"0", "false", "no", "off"}:
+            return model
+        if self._device.type != "cuda":
+            return model
+        compile_fn = getattr(torch, "compile", None)
+        if compile_fn is None:
+            return model
+        try:
+            return compile_fn(model, mode="reduce-overhead")
+        except Exception:
+            return model
 
 
 def create_default_price_tag_parser() -> PriceTagParser:

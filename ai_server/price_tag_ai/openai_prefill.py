@@ -27,7 +27,7 @@ PROMPT = """You extract structured numeric data from grocery store shelf price t
 Return only the following fields when visible:
 - price: the displayed total price as a decimal number
 - net_quantity: the size of each item, as a decimal number
-- quantity_unit: one of OZ, LB, ITEM, KG, G, LIT, ML, GAL, QT, PT, TSP, TBSP
+- quantity_unit: one of OZ, LB, ITEM, KG, G, LIT, ML, GAL, QT, PT, TSP, TBSP, FL_OZ, CUP
 - pack_count: integer count of items in the package
 - upc_present: true if a UPC/barcode number is visibly present in the image, else false
 - upc_code: only the UPC digits if visible and readable, else null

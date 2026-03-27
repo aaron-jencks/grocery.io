@@ -3,7 +3,9 @@ from __future__ import annotations
 import argparse
 import json
 import multiprocessing as mp
+import os
 import random
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,13 +19,24 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
-from torchvision.models import resnet18, resnet34, resnet50
+from torchvision.models import (
+    MobileNet_V3_Large_Weights,
+    MobileNet_V3_Small_Weights,
+    ResNet18_Weights,
+    ResNet34_Weights,
+    ResNet50_Weights,
+    mobilenet_v3_large,
+    mobilenet_v3_small,
+    resnet18,
+    resnet34,
+    resnet50,
+)
 
-from price_tag_ai.config import AppConfig, load_config
+from price_tag_ai.config import AppConfig, AugmentationConfig, load_config
 from price_tag_ai.dataset import PriceTagDatasetStore
 
 
-UNITS = ["OZ", "LB", "ITEM", "KG", "G", "LIT", "ML", "GAL", "QT", "PT", "TSP", "TBSP"]
+UNITS = ["OZ", "LB", "ITEM", "KG", "G", "LIT", "ML", "GAL", "QT", "PT", "TSP", "TBSP", "FL_OZ", "CUP"]
 UNIT_TO_INDEX = {unit: index for index, unit in enumerate(UNITS)}
 
 
@@ -47,10 +60,15 @@ class PriceTagTorchDataset(Dataset):
         image_root: Path,
         image_size: int,
         train: bool,
+        augmentation: AugmentationConfig,
     ):
         self.records = records
         self.image_root = image_root
-        self.transform = self._build_transform(image_size, train)
+        self.transform = self._build_transform(
+            image_size=image_size,
+            train=train,
+            augmentation=augmentation,
+        )
 
     def __len__(self) -> int:
         return len(self.records)
@@ -100,19 +118,83 @@ class PriceTagTorchDataset(Dataset):
             ),
         }
 
-    def _build_transform(self, image_size: int, train: bool) -> transforms.Compose:
-        augment = [transforms.RandomHorizontalFlip(p=0.5)] if train else []
+    def _build_transform(
+        self,
+        image_size: int,
+        train: bool,
+        augmentation: AugmentationConfig,
+    ) -> transforms.Compose:
+        augment = build_augmentations(augmentation) if train else []
+        tensor_augment = build_tensor_augmentations(augmentation) if train else []
         return transforms.Compose(
             [
                 transforms.Resize((image_size, image_size)),
                 *augment,
                 transforms.ToTensor(),
+                *tensor_augment,
                 transforms.Normalize(
                     mean=[0.485, 0.456, 0.406],
                     std=[0.229, 0.224, 0.225],
                 ),
             ]
         )
+
+
+class AddGaussianNoise(nn.Module):
+    def __init__(self, std: float):
+        super().__init__()
+        self.std = std
+
+    def forward(self, tensor: torch.Tensor) -> torch.Tensor:
+        noise = torch.randn_like(tensor) * self.std
+        return torch.clamp(tensor + noise, 0.0, 1.0)
+
+
+def build_augmentations(augmentation: AugmentationConfig) -> list[Any]:
+    if not augmentation.enabled:
+        return []
+    image_augmentations: list[Any] = [
+        transforms.RandomRotation(degrees=augmentation.rotation_degrees),
+        transforms.ColorJitter(
+            brightness=augmentation.brightness,
+            contrast=augmentation.contrast,
+        ),
+    ]
+    if augmentation.perspective_probability > 0.0:
+        image_augmentations.append(
+            transforms.RandomPerspective(
+                distortion_scale=augmentation.perspective_distortion_scale,
+                p=augmentation.perspective_probability,
+            )
+        )
+    if augmentation.blur_probability > 0.0:
+        image_augmentations.append(
+            transforms.RandomApply(
+                [
+                    transforms.GaussianBlur(
+                        kernel_size=augmentation.blur_kernel_size,
+                        sigma=(augmentation.blur_sigma_min, augmentation.blur_sigma_max),
+                    )
+                ],
+                p=augmentation.blur_probability,
+            )
+        )
+    return image_augmentations
+
+
+def build_tensor_augmentations(augmentation: AugmentationConfig) -> list[Any]:
+    if (
+        not augmentation.enabled
+        or augmentation.noise_probability <= 0.0
+        or augmentation.noise_std <= 0.0
+    ):
+        return []
+    return [
+        transforms.RandomApply(
+            [AddGaussianNoise(std=augmentation.noise_std)],
+            p=augmentation.noise_probability,
+        )
+    ]
 
 
 class PriceTagModel(nn.Module):
@@ -149,21 +231,79 @@ class PriceTagModel(nn.Module):
         backbone: str,
         pretrained: bool,
     ) -> tuple[nn.Module, int]:
-        weights = None
         if backbone == "resnet18":
-            net = resnet18(weights=None if not pretrained else "DEFAULT")
+            net = resnet18(weights=ResNet18_Weights.DEFAULT if pretrained else None)
             feature_dim = net.fc.in_features
+            net.fc = nn.Identity()
         elif backbone == "resnet34":
-            net = resnet34(weights=None if not pretrained else "DEFAULT")
+            net = resnet34(weights=ResNet34_Weights.DEFAULT if pretrained else None)
             feature_dim = net.fc.in_features
+            net.fc = nn.Identity()
         elif backbone == "resnet50":
-            net = resnet50(weights=None if not pretrained else "DEFAULT")
+            net = resnet50(weights=ResNet50_Weights.DEFAULT if pretrained else None)
             feature_dim = net.fc.in_features
+            net.fc = nn.Identity()
+        elif backbone == "mobilenet_v3_small":
+            net = mobilenet_v3_small(weights=MobileNet_V3_Small_Weights.DEFAULT if pretrained else None)
+            feature_dim = net.classifier[0].in_features
+            net.classifier = nn.Identity()
+        elif backbone == "mobilenet_v3_large":
+            net = mobilenet_v3_large(weights=MobileNet_V3_Large_Weights.DEFAULT if pretrained else None)
+            feature_dim = net.classifier[0].in_features
+            net.classifier = nn.Identity()
         else:
             raise ValueError(f"Unsupported backbone: {backbone}")
 
-        net.fc = nn.Identity()
         return net, feature_dim
+
+
+def build_run_timestamp() -> str:
+    return time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+
+
+def init_wandb_run(config: AppConfig, run_name: str):
+    if not config.wandb.enabled:
+        return None
+    if not config.wandb.project:
+        raise ValueError("wandb.project is required when wandb.enabled=true")
+    if not config.wandb.entity:
+        raise ValueError("wandb.entity is required when wandb.enabled=true")
+    import wandb
+
+    return wandb.init(
+        entity=config.wandb.entity,
+        project=config.wandb.project,
+        name=run_name,
+        config=config.model_dump(mode="json"),
+    )
+
+
+def configure_wandb_env(config: AppConfig, run_name: str) -> None:
+    if not config.wandb.enabled:
+        return
+    if not config.wandb.project:
+        raise ValueError("wandb.project is required when wandb.enabled=true")
+    if not config.wandb.entity:
+        raise ValueError("wandb.entity is required when wandb.enabled=true")
+    os.environ["WANDB_PROJECT"] = config.wandb.project
+    os.environ["WANDB_ENTITY"] = config.wandb.entity
+    os.environ["WANDB_NAME"] = run_name
+
+
+def wandb_log(config: AppConfig, payload: dict[str, float], step: int | None = None) -> None:
+    if not config.wandb.enabled:
+        return
+    import wandb
+
+    wandb.log(payload, step=step)
+
+
+def finish_wandb_run(config: AppConfig) -> None:
+    if not config.wandb.enabled:
+        return
+    import wandb
+
+    wandb.finish()
 
 
 def parse_args() -> argparse.Namespace:
@@ -189,6 +329,8 @@ def run_training(config: AppConfig) -> None:
 
     output_dir = Path(config.train.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    run_timestamp = build_run_timestamp()
+    wandb_run = init_wandb_run(config, run_timestamp)
 
     train_manifest = Path(config.dataset.train_manifest)
     val_manifest = Path(config.dataset.val_manifest)
@@ -208,12 +350,14 @@ def run_training(config: AppConfig) -> None:
         image_root=image_root,
         image_size=config.model.image_size,
         train=True,
+        augmentation=config.dataset.augmentation,
     )
     val_dataset = PriceTagTorchDataset(
         records=val_records,
         image_root=image_root,
         image_size=config.model.image_size,
         train=False,
+        augmentation=config.dataset.augmentation,
     )
     current_num_workers = resolve_num_workers(config.dataset.num_workers)
     train_loader, val_loader = build_loaders(
@@ -253,144 +397,171 @@ def run_training(config: AppConfig) -> None:
         f"unpars={binary_pos_weights['is_unparsable']:.3f}, "
         f"upc={binary_pos_weights['upc_present']:.3f}"
     )
-    run_timestamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     best_checkpoint_path = output_dir / f"best-{run_timestamp}.pt"
 
     best_val_loss = float("inf")
     history: list[dict[str, float]] = []
 
-    for epoch in range(1, config.train.epochs + 1):
-        epoch_start = time.perf_counter()
-        try:
-            train_metrics = run_epoch(
-                model=model,
-                loader=train_loader,
-                optimizer=optimizer,
-                device=device,
-                train=True,
-                log_every_n_steps=config.train.log_every_n_steps,
-                binary_pos_weights=binary_pos_weights,
+    try:
+        for epoch in range(1, config.train.epochs + 1):
+            epoch_start = time.perf_counter()
+            try:
+                train_metrics = run_epoch(
+                    model=model,
+                    loader=train_loader,
+                    optimizer=optimizer,
+                    device=device,
+                    train=True,
+                    log_every_n_steps=config.train.log_every_n_steps,
+                    binary_pos_weights=binary_pos_weights,
+                )
+                val_metrics = run_epoch(
+                    model=model,
+                    loader=val_loader,
+                    optimizer=None,
+                    device=device,
+                    train=False,
+                    log_every_n_steps=config.train.log_every_n_steps,
+                    binary_pos_weights=binary_pos_weights,
+                )
+            except PermissionError:
+                if current_num_workers <= 0:
+                    raise
+                print(
+                    "DataLoader multiprocessing failed in this environment; "
+                    "falling back to num_workers=0.",
+                )
+                current_num_workers = 0
+                train_loader, val_loader = build_loaders(
+                    train_dataset=train_dataset,
+                    val_dataset=val_dataset,
+                    batch_size=config.train.batch_size,
+                    num_workers=current_num_workers,
+                )
+                train_metrics = run_epoch(
+                    model=model,
+                    loader=train_loader,
+                    optimizer=optimizer,
+                    device=device,
+                    train=True,
+                    log_every_n_steps=config.train.log_every_n_steps,
+                    binary_pos_weights=binary_pos_weights,
+                )
+                val_metrics = run_epoch(
+                    model=model,
+                    loader=val_loader,
+                    optimizer=None,
+                    device=device,
+                    train=False,
+                    log_every_n_steps=config.train.log_every_n_steps,
+                    binary_pos_weights=binary_pos_weights,
+                )
+            epoch_seconds = time.perf_counter() - epoch_start
+            history.append({
+                "epoch": float(epoch),
+                "train_loss": train_metrics["loss"],
+                "val_loss": val_metrics["loss"],
+                "val_price_mae": val_metrics["price_mae"],
+                "val_price_rmse": val_metrics["price_rmse"],
+                "val_net_quantity_mae": val_metrics["net_quantity_mae"],
+                "val_net_quantity_rmse": val_metrics["net_quantity_rmse"],
+                "val_pack_count_mae": val_metrics["pack_count_mae"],
+                "val_pack_count_rmse": val_metrics["pack_count_rmse"],
+                "val_unit_accuracy": val_metrics["unit_accuracy"],
+                "val_variable_weight_accuracy": val_metrics["variable_weight_accuracy"],
+                "val_variable_weight_precision": val_metrics["variable_weight_precision"],
+                "val_variable_weight_recall": val_metrics["variable_weight_recall"],
+                "val_variable_weight_f1": val_metrics["variable_weight_f1"],
+                "val_ambiguous_accuracy": val_metrics["ambiguous_accuracy"],
+                "val_ambiguous_precision": val_metrics["ambiguous_precision"],
+                "val_ambiguous_recall": val_metrics["ambiguous_recall"],
+                "val_ambiguous_f1": val_metrics["ambiguous_f1"],
+                "val_unparsable_accuracy": val_metrics["unparsable_accuracy"],
+                "val_unparsable_precision": val_metrics["unparsable_precision"],
+                "val_unparsable_recall": val_metrics["unparsable_recall"],
+                "val_unparsable_f1": val_metrics["unparsable_f1"],
+                "val_upc_present_accuracy": val_metrics["upc_present_accuracy"],
+                "val_upc_present_precision": val_metrics["upc_present_precision"],
+                "val_upc_present_recall": val_metrics["upc_present_recall"],
+                "val_upc_present_f1": val_metrics["upc_present_f1"],
+            })
+
+            wandb_log(
+                config,
+                {
+                    "epoch": float(epoch),
+                    "train/loss": train_metrics["loss"],
+                    "val/loss": val_metrics["loss"],
+                    "val/unit_accuracy": val_metrics["unit_accuracy"],
+                    "val/price_mae": val_metrics["price_mae"],
+                    "val/price_rmse": val_metrics["price_rmse"],
+                    "val/net_quantity_mae": val_metrics["net_quantity_mae"],
+                    "val/net_quantity_rmse": val_metrics["net_quantity_rmse"],
+                    "val/pack_count_mae": val_metrics["pack_count_mae"],
+                    "val/pack_count_rmse": val_metrics["pack_count_rmse"],
+                    "val/variable_weight_f1": val_metrics["variable_weight_f1"],
+                    "val/ambiguous_f1": val_metrics["ambiguous_f1"],
+                    "val/unparsable_f1": val_metrics["unparsable_f1"],
+                    "val/upc_present_f1": val_metrics["upc_present_f1"],
+                    "train/lr": optimizer.param_groups[0]["lr"],
+                    "train/epoch_seconds": epoch_seconds,
+                },
+                step=epoch,
             )
-            val_metrics = run_epoch(
-                model=model,
-                loader=val_loader,
-                optimizer=None,
-                device=device,
-                train=False,
-                log_every_n_steps=config.train.log_every_n_steps,
-                binary_pos_weights=binary_pos_weights,
-            )
-        except PermissionError:
-            if current_num_workers <= 0:
-                raise
+
             print(
-                "DataLoader multiprocessing failed in this environment; "
-                "falling back to num_workers=0.",
+                f"[epoch {epoch}] "
+                f"train_loss={train_metrics['loss']:.4f} "
+                f"val_loss={val_metrics['loss']:.4f} "
+                f"unit_acc={val_metrics['unit_accuracy']:.3f} "
+                f"price_mae={val_metrics['price_mae']:.3f} "
+                f"lr={optimizer.param_groups[0]['lr']:.7f} "
+                f"secs={epoch_seconds:.2f}"
             )
-            current_num_workers = 0
-            train_loader, val_loader = build_loaders(
-                train_dataset=train_dataset,
-                val_dataset=val_dataset,
-                batch_size=config.train.batch_size,
-                num_workers=current_num_workers,
+            print(
+                "  val_regression "
+                f"price_rmse={val_metrics['price_rmse']:.3f} "
+                f"net_mae={val_metrics['net_quantity_mae']:.3f} net_rmse={val_metrics['net_quantity_rmse']:.3f} "
+                f"pack_mae={val_metrics['pack_count_mae']:.3f} pack_rmse={val_metrics['pack_count_rmse']:.3f}"
             )
-            train_metrics = run_epoch(
-                model=model,
-                loader=train_loader,
-                optimizer=optimizer,
-                device=device,
-                train=True,
-                log_every_n_steps=config.train.log_every_n_steps,
-                binary_pos_weights=binary_pos_weights,
+            print(
+                "  val_binary "
+                f"var_f1={val_metrics['variable_weight_f1']:.3f} "
+                f"amb_f1={val_metrics['ambiguous_f1']:.3f} "
+                f"unpars_f1={val_metrics['unparsable_f1']:.3f} "
+                f"upc_f1={val_metrics['upc_present_f1']:.3f}"
             )
-            val_metrics = run_epoch(
-                model=model,
-                loader=val_loader,
-                optimizer=None,
-                device=device,
-                train=False,
-                log_every_n_steps=config.train.log_every_n_steps,
-                binary_pos_weights=binary_pos_weights,
-            )
-        epoch_seconds = time.perf_counter() - epoch_start
-        history.append({
-            "epoch": float(epoch),
-            "train_loss": train_metrics["loss"],
-            "val_loss": val_metrics["loss"],
-            "val_price_mae": val_metrics["price_mae"],
-            "val_price_rmse": val_metrics["price_rmse"],
-            "val_net_quantity_mae": val_metrics["net_quantity_mae"],
-            "val_net_quantity_rmse": val_metrics["net_quantity_rmse"],
-            "val_pack_count_mae": val_metrics["pack_count_mae"],
-            "val_pack_count_rmse": val_metrics["pack_count_rmse"],
-            "val_unit_accuracy": val_metrics["unit_accuracy"],
-            "val_variable_weight_accuracy": val_metrics["variable_weight_accuracy"],
-            "val_variable_weight_precision": val_metrics["variable_weight_precision"],
-            "val_variable_weight_recall": val_metrics["variable_weight_recall"],
-            "val_variable_weight_f1": val_metrics["variable_weight_f1"],
-            "val_ambiguous_accuracy": val_metrics["ambiguous_accuracy"],
-            "val_ambiguous_precision": val_metrics["ambiguous_precision"],
-            "val_ambiguous_recall": val_metrics["ambiguous_recall"],
-            "val_ambiguous_f1": val_metrics["ambiguous_f1"],
-            "val_unparsable_accuracy": val_metrics["unparsable_accuracy"],
-            "val_unparsable_precision": val_metrics["unparsable_precision"],
-            "val_unparsable_recall": val_metrics["unparsable_recall"],
-            "val_unparsable_f1": val_metrics["unparsable_f1"],
-            "val_upc_present_accuracy": val_metrics["upc_present_accuracy"],
-            "val_upc_present_precision": val_metrics["upc_present_precision"],
-            "val_upc_present_recall": val_metrics["upc_present_recall"],
-            "val_upc_present_f1": val_metrics["upc_present_f1"],
-        })
 
-        print(
-            f"[epoch {epoch}] "
-            f"train_loss={train_metrics['loss']:.4f} "
-            f"val_loss={val_metrics['loss']:.4f} "
-            f"unit_acc={val_metrics['unit_accuracy']:.3f} "
-            f"price_mae={val_metrics['price_mae']:.3f} "
-            f"lr={optimizer.param_groups[0]['lr']:.7f} "
-            f"secs={epoch_seconds:.2f}"
-        )
-        print(
-            "  val_regression "
-            f"price_rmse={val_metrics['price_rmse']:.3f} "
-            f"net_mae={val_metrics['net_quantity_mae']:.3f} net_rmse={val_metrics['net_quantity_rmse']:.3f} "
-            f"pack_mae={val_metrics['pack_count_mae']:.3f} pack_rmse={val_metrics['pack_count_rmse']:.3f}"
-        )
-        print(
-            "  val_binary "
-            f"var_f1={val_metrics['variable_weight_f1']:.3f} "
-            f"amb_f1={val_metrics['ambiguous_f1']:.3f} "
-            f"unpars_f1={val_metrics['unparsable_f1']:.3f} "
-            f"upc_f1={val_metrics['upc_present_f1']:.3f}"
-        )
+            if val_metrics["loss"] < best_val_loss:
+                best_val_loss = val_metrics["loss"]
+                save_checkpoint(
+                    best_checkpoint_path,
+                    model,
+                    optimizer,
+                    scheduler,
+                    epoch,
+                    config,
+                    val_metrics,
+                    alias_paths=[output_dir / "best.pt", output_dir / "best_custom.pt"],
+                )
+            if epoch % config.train.save_every_n_epochs == 0:
+                save_checkpoint(
+                    output_dir / f"epoch-{epoch:03d}-{run_timestamp}.pt",
+                    model,
+                    optimizer,
+                    scheduler,
+                    epoch,
+                    config,
+                    val_metrics,
+                )
+            scheduler.step()
 
-        if val_metrics["loss"] < best_val_loss:
-            best_val_loss = val_metrics["loss"]
-            save_checkpoint(
-                best_checkpoint_path,
-                model,
-                optimizer,
-                scheduler,
-                epoch,
-                config,
-                val_metrics,
-            )
-        if epoch % config.train.save_every_n_epochs == 0:
-            save_checkpoint(
-                output_dir / f"epoch-{epoch:03d}-{run_timestamp}.pt",
-                model,
-                optimizer,
-                scheduler,
-                epoch,
-                config,
-                val_metrics,
-            )
-        scheduler.step()
-
-    print_final_summary(history)
-    write_training_artifacts(output_dir, config, history)
-    print("Training complete.")
+        print_final_summary(history)
+        write_training_artifacts(output_dir, config, history)
+        print("Training complete.")
+    finally:
+        if wandb_run is not None:
+            finish_wandb_run(config)
 
 
 def run_epoch(
@@ -1026,9 +1197,12 @@ def save_checkpoint(
     epoch: int,
     config: AppConfig,
     val_metrics: dict[str, float],
+    trainer_type: str = "custom",
+    alias_paths: list[Path] | None = None,
 ) -> None:
     checkpoint = {
         "epoch": epoch,
+        "trainer_type": trainer_type,
         "model_state_dict": model.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
         "scheduler_state_dict": scheduler.state_dict(),
@@ -1036,7 +1210,25 @@ def save_checkpoint(
         "units": UNITS,
         "val_metrics": val_metrics,
     }
-    torch.save(checkpoint, path)
+    write_checkpoint_atomically(path, checkpoint)
+    for alias_path in alias_paths or []:
+        write_checkpoint_atomically(alias_path, checkpoint)
+
+
+def write_checkpoint_atomically(path: Path, checkpoint: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        dir=path.parent,
+        prefix=f"{path.name}.",
+        suffix=".tmp",
+        delete=False,
+    ) as handle:
+        temp_path = Path(handle.name)
+    try:
+        torch.save(checkpoint, temp_path)
+        os.replace(temp_path, path)
+    finally:
+        temp_path.unlink(missing_ok=True)
 
 
 def resolve_device(requested: str) -> torch.device:

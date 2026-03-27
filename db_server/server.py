@@ -23,6 +23,7 @@ from db_server.repositories.grocery import ShoppingOptimizationInput
 class GroceryServicer(
     db_service_pb2_grpc.UpcServiceServicer,
     db_service_pb2_grpc.CatalogServiceServicer,
+    db_service_pb2_grpc.StoreServiceServicer,
     db_service_pb2_grpc.ObservationServiceServicer,
     db_service_pb2_grpc.ParsingServiceServicer,
     db_service_pb2_grpc.ShoppingServiceServicer,
@@ -46,7 +47,7 @@ class GroceryServicer(
         context: grpc.ServicerContext,
     ) -> db_service_pb2.UpcResponse:
         upc = request.upc.strip()
-        if len(upc) < 4 or not upc.isdigit():
+        if not self._is_valid_upc_lookup_key(upc):
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, "UPC must be at least 4 digits")
 
         variant = self.repository.resolve_upc(upc)
@@ -89,6 +90,27 @@ class GroceryServicer(
         )
         for variant in self.repository.list_variants_for_product(product_name, updated_after):
             response.variants.add().CopyFrom(self._to_upc_info(variant))
+        return response
+
+    def FindStoreByAddress(
+        self,
+        request: db_service_pb2.StoreLookupRequest,
+        context: grpc.ServicerContext,
+    ) -> db_service_pb2.StoreLookupResponse:
+        address = request.storeAddress.strip()
+        if not address:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "storeAddress is required")
+
+        store = self.repository.find_store_by_address(address)
+        response = db_service_pb2.StoreLookupResponse(found=store is not None)
+        if store is not None:
+            response.store.storeAddress = store.address
+            if store.latitude is not None and store.longitude is not None:
+                response.store.location.latitude = store.latitude
+                response.store.location.longitude = store.longitude
+            response.store.requiresPaidMembership = store.requires_paid_membership
+            if store.name is not None:
+                response.store.storeName = store.name
         return response
 
     def CreatePriceObservation(
@@ -140,7 +162,9 @@ class GroceryServicer(
             product_name = item.productName.strip()
             if not product_name:
                 context.abort(grpc.StatusCode.INVALID_ARGUMENT, "productName is required")
-            desired_count = max(1, int(item.desiredCount))
+            desired_count = float(item.desiredCount)
+            if desired_count <= 0.0:
+                context.abort(grpc.StatusCode.INVALID_ARGUMENT, "desiredCount must be greater than zero")
             mode = self._to_repo_comparison_mode(item.comparisonMode)
             preferred_upc = item.preferredUpc.strip() if item.HasField("preferredUpc") else None
             items.append(
@@ -148,8 +172,24 @@ class GroceryServicer(
                     item_id=int(item.itemId),
                     product_name=product_name,
                     desired_count=desired_count,
+                    desired_quantity_unit=ProductUnit(item.desiredQuantityUnit),
                     comparison_mode=mode,
                     preferred_upc=preferred_upc or None,
+                    allow_paid_membership_required=(
+                        request.allowPaidMembershipRequired
+                        if request.HasField("allowPaidMembershipRequired")
+                        else True
+                    ),
+                    allow_loyalty_card_required=(
+                        request.allowLoyaltyCardRequired
+                        if request.HasField("allowLoyaltyCardRequired")
+                        else True
+                    ),
+                    single_store_only=(
+                        request.singleStoreOnly
+                        if request.HasField("singleStoreOnly")
+                        else False
+                    ),
                 )
             )
 
@@ -168,8 +208,10 @@ class GroceryServicer(
             )
             entry.store.storeId = match.store_id
             entry.store.storeAddress = match.store_address
-            entry.store.location.latitude = match.store_latitude
-            entry.store.location.longitude = match.store_longitude
+            if match.store_latitude is not None and match.store_longitude is not None:
+                entry.store.location.latitude = match.store_latitude
+                entry.store.location.longitude = match.store_longitude
+            entry.store.requiresPaidMembership = match.store_requires_paid_membership
             if match.store_name is not None:
                 entry.store.storeName = match.store_name
             entry.variant.upc = match.upc
@@ -184,6 +226,14 @@ class GroceryServicer(
             entry.variant.packCount = match.pack_count
             entry.variant.netQuantity = match.net_quantity
             entry.variant.quantityUnit = int(match.quantity_unit.value)
+            entry.requiresPaidMembership = match.requires_paid_membership
+            entry.requiresLoyaltyCard = match.requires_loyalty_card
+            if match.pricing_basis_line is not None:
+                entry.pricingBasisLine = match.pricing_basis_line
+            if match.pricing_equation_line is not None:
+                entry.pricingEquationLine = match.pricing_equation_line
+            if match.approximation_warning is not None:
+                entry.approximationWarning = match.approximation_warning
         for item in unmatched:
             response.unmatched.add(
                 itemId=item.item_id,
@@ -220,17 +270,33 @@ class GroceryServicer(
         self._validate_request(request)
         raw_upc = request.upc.upc.strip()
         normalized_upc = raw_upc
-        if not raw_upc and request.upc.isVariableWeight:
-            normalized_upc = self._derive_synthetic_variable_weight_upc(
+        if not raw_upc and self._allows_missing_upc(request.upc):
+            normalized_upc = self._derive_synthetic_upc(
                 product_name=request.upc.productName.strip(),
                 variant_label=request.upc.variantLabel.strip(),
                 pack_count=request.upc.packCount,
                 net_quantity=request.upc.netQuantity,
                 quantity_unit=ProductUnit(request.upc.quantityUnit),
+                is_variable_weight=request.upc.isVariableWeight,
             )
 
         sale = None
         if request.HasField("saleInfo"):
+            sale_multiple_of = (
+                request.saleInfo.multipleOf
+                if request.saleInfo.HasField("multipleOf")
+                else None
+            )
+            sale_minimum_quantity = (
+                request.saleInfo.minimumQuantity
+                if request.saleInfo.HasField("minimumQuantity")
+                else None
+            )
+            if (
+                sale_multiple_of is not None
+                and (sale_minimum_quantity is None or sale_minimum_quantity < sale_multiple_of)
+            ):
+                sale_minimum_quantity = sale_multiple_of
             sale = SaleInput(
                 start_date=request.saleInfo.startDate,
                 expiration_date=(
@@ -238,23 +304,31 @@ class GroceryServicer(
                     if request.saleInfo.HasField("expirationDate")
                     else None
                 ),
-                minimum_quantity=(
-                    request.saleInfo.minimumQuantity
-                    if request.saleInfo.HasField("minimumQuantity")
-                    else None
-                ),
+                minimum_quantity=sale_minimum_quantity,
                 limit_quantity=(
                     request.saleInfo.limitQuantity
                     if request.saleInfo.HasField("limitQuantity")
                     else None
                 ),
+                multiple_of=sale_multiple_of,
+                requires_paid_membership=request.saleInfo.requiresPaidMembership,
+                requires_loyalty_card=request.saleInfo.requiresLoyaltyCard,
             )
 
         return PriceObservationInput(
             store_address=request.store.storeAddress.strip(),
-            store_latitude=request.store.location.latitude,
-            store_longitude=request.store.location.longitude,
+            store_latitude=(
+                request.store.location.latitude
+                if request.store.HasField("location")
+                else None
+            ),
+            store_longitude=(
+                request.store.location.longitude
+                if request.store.HasField("location")
+                else None
+            ),
             store_name=request.store.storeName.strip() if request.store.HasField("storeName") else None,
+            store_requires_paid_membership=request.store.requiresPaidMembership,
             upc=normalized_upc,
             product_name=request.upc.productName.strip(),
             product_category=(
@@ -285,10 +359,12 @@ class GroceryServicer(
             raise ValueError("Store address is required")
         upc = request.upc.upc.strip()
         if upc:
-            if not upc.isdigit() or len(upc) < 4:
+            if not self._is_valid_upc_lookup_key(upc):
                 raise ValueError("UPC must contain only digits and be at least 4 digits")
-        elif not request.upc.isVariableWeight:
-            raise ValueError("UPC must contain only digits and be at least 4 digits")
+        elif not self._allows_missing_upc(request.upc):
+            raise ValueError(
+                "UPC must contain only digits and be at least 4 digits unless the item is variable weight or no UPC is available"
+            )
         if not request.upc.productName.strip():
             raise ValueError("Product name is required")
         has_variant_details = (
@@ -309,8 +385,16 @@ class GroceryServicer(
             raise ValueError("observedAt is required")
         if request.isSale and not request.HasField("saleInfo"):
             raise ValueError("saleInfo is required when isSale is true")
+        if request.HasField("saleInfo") and request.saleInfo.HasField("multipleOf") and request.saleInfo.multipleOf <= 0:
+            raise ValueError("sale multipleOf must be greater than zero")
         if request.HasField("saleInfo") and not request.saleInfo.startDate.strip():
             raise ValueError("saleInfo.startDate is required")
+        if request.store.requiresPaidMembership:
+            if request.HasField("saleInfo"):
+                if not request.saleInfo.requiresPaidMembership:
+                    raise ValueError("saleInfo.requiresPaidMembership must be true when store.requiresPaidMembership is true")
+                if not request.saleInfo.requiresLoyaltyCard:
+                    raise ValueError("saleInfo.requiresLoyaltyCard must be true when store.requiresPaidMembership is true")
 
     def _to_repo_comparison_mode(self, mode: int) -> str:
         if mode == db_service_pb2.BEST_UNIT_VALUE:
@@ -322,13 +406,24 @@ class GroceryServicer(
             return db_service_pb2.BEST_UNIT_VALUE
         return db_service_pb2.CHEAPEST_PRICE
 
-    def _derive_synthetic_variable_weight_upc(
+    def _allows_missing_upc(self, upc_info: db_service_pb2.UpcInfo) -> bool:
+        return upc_info.isVariableWeight or (
+            upc_info.HasField("noUpcAvailable") and upc_info.noUpcAvailable
+        )
+
+    def _is_valid_upc_lookup_key(self, upc: str) -> bool:
+        if len(upc) >= 4 and upc.isdigit():
+            return True
+        return upc.startswith("vw:") or upc.startswith("noupc:")
+
+    def _derive_synthetic_upc(
         self,
         product_name: str,
         variant_label: str,
         pack_count: int,
         net_quantity: float,
         quantity_unit: ProductUnit,
+        is_variable_weight: bool,
     ) -> str:
         payload = "|".join(
             [
@@ -337,12 +432,12 @@ class GroceryServicer(
                 str(pack_count),
                 f"{net_quantity:.6f}",
                 quantity_unit.name,
-                "varwt",
+                "varwt" if is_variable_weight else "noupc",
             ]
         )
         digest = hashlib.sha1(payload.encode("utf-8")).hexdigest()
-        numeric = int(digest[:12], 16) % 10_000_000_000
-        return f"99{numeric:010d}"
+        prefix = "vw:" if is_variable_weight else "noupc:"
+        return f"{prefix}{digest[:16]}"
 
     def _to_proto_packaging_style(self, value: PackagingStyle) -> int:
         mapping = {
@@ -476,6 +571,7 @@ def serve(host: str, port: int, db_path: Path) -> grpc.Server:
     servicer = create_servicer(db_path, training_data_dir=default_training_data_dir())
     db_service_pb2_grpc.add_UpcServiceServicer_to_server(servicer, server)
     db_service_pb2_grpc.add_CatalogServiceServicer_to_server(servicer, server)
+    db_service_pb2_grpc.add_StoreServiceServicer_to_server(servicer, server)
     db_service_pb2_grpc.add_ObservationServiceServicer_to_server(servicer, server)
     db_service_pb2_grpc.add_ParsingServiceServicer_to_server(servicer, server)
     db_service_pb2_grpc.add_ShoppingServiceServicer_to_server(servicer, server)

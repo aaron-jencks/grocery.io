@@ -12,6 +12,9 @@ class Sale:
     expiration_date: Optional[dt.datetime]
     start_date: dt.datetime
     minimum_quantity: Optional[int]
+    multiple_of: Optional[int]
+    requires_paid_membership: bool
+    requires_loyalty_card: bool
 
 
 @dataclass
@@ -19,8 +22,9 @@ class Store:
     rowid: int
     name: Optional[str]
     address: str
-    latitude: float
-    longitude: float
+    latitude: Optional[float]
+    longitude: Optional[float]
+    requires_paid_membership: bool
 
 
 @dataclass

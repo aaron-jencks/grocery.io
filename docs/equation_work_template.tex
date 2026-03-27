@@ -1,0 +1,72 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath, amssymb, mathtools}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+
+\title{Equation Work Template}
+\author{}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section*{How to Use This File}
+Replace the sample equations below with your own work.
+
+\begin{itemize}
+  \item Use \texttt{equation} for one numbered equation.
+  \item Use \texttt{align} to show multiple steps with numbers.
+  \item Use \texttt{align*} if you want steps without numbers.
+  \item Add \verb|\label{...}| and refer to equations with \verb|\eqref{...}|.
+\end{itemize}
+
+\section{Equation List}
+
+\subsection{Single Equation}
+This is a single numbered equation:
+
+\begin{equation}
+E = mc^2
+\label{eq:energy}
+\end{equation}
+
+You can refer back to Equation~\eqref{eq:energy}.
+
+\subsection{Show Your Work}
+Use this format when you want to show each algebra step:
+
+\begin{align}
+2x + 3 &= 11 \label{eq:start} \\
+2x &= 8 \label{eq:subtract3} \\
+x &= 4 \label{eq:solution}
+\end{align}
+
+Equation~\eqref{eq:solution} gives the final answer.
+
+\subsection{System of Equations}
+
+\begin{align}
+y &= 2x + 1 \\
+y &= x + 5
+\end{align}
+
+\subsection{Unnumbered Scratch Work}
+Use \texttt{align*} if you do not want equation numbers:
+
+\begin{align*}
+(x+1)^2 &= x^2 + 2x + 1 \\
+         &= x(x+2) + 1
+\end{align*}
+
+\section{Your Work}
+Copy one of the blocks above and replace it with your own equations.
+
+\begin{align}
+f(x) &= x^2 + 3x + 2 \\
+f'(x) &= 2x + 3
+\end{align}
+
+\end{document}
